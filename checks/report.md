@@ -670,3 +670,83 @@ night; the minimap and driving HUD are live.
     (480,300) dead-on and the straight unstick could not get around
     it (18 unsticks, timeout). The drive test's autopilot now uses
     the same right-lane aim; the test passes with 0 unsticks.
+
+## Stage F — title screen and final screenshots
+
+- A living-city title screen: the aerial camera orbits the city centre at
+  ~300 units up (titleCameraAt in the new `title.js`), looking down at the
+  streets, while the crowd and the traffic keep moving under it — the world
+  sim steps on the title screen, only the player's walk/drive is held. The
+  logo is original vector lettering drawn in code: a 5x7 pixel letterform,
+  authored here for P, A, L, K, O, N, U, T, rendered as SVG rectangles in
+  limestone with a coral shadow — no image file, no copied font. Below it:
+  "THE SOLMAR STORY", the tagline "The city has a price. Find out who is
+  paying.", and a save-aware menu — CONTINUE (only when a saved story
+  exists), NEW GAME, CONTROLS. The district panel, minimap and controls
+  footer hide with the title and return when play starts. Clicking the
+  overlay outside a button, or Enter/Space, starts the game; NEW GAME
+  wipes the save (missions + garages, parked cars roll out onto the street
+  in front of their bays) and hides CONTINUE again.
+- The final 4 screenshots (the old four are gone; `shots.json` lists
+  exactly these): 1-title.jpg (the title cover), 2-drive-day.jpg (the red
+  coupe on the South Market road at midday), 3-mission.jpg (Mara in teal
+  beside the gold relay beacon, "Relay stop 2 of 4 — Citrus Quarter"),
+  4-night-pursuit.jpg (the coupe at night, patrol cars closing in,
+  WARRANT three stars). All 1280x720 JPEG, 95–133 KiB (cap 256 KiB).
+- The mission beacon no longer photographs as a black monolith: its pillar
+  and base pad now use the concrete tile (bright diffuse, takes the gold)
+  instead of lampGlow (near-black diffuse, emissive only at night).
+
+## Verification (all in a real headless browser, SwiftShader WebGL)
+- `?test=title` — **PASS, 0 console errors, 0 page errors**, 23 checks.
+  Logo drawn (306 SVG rects); aerial camera finite, height 312; title
+  frame renders (centre mean 117.7); district panel and minimap hidden on
+  title; CONTINUE hidden with no save, shown after earning $500; CONTINUE
+  starts with the save intact (cash $500 kept); NEW GAME removes the save,
+  cash $0, CONTINUE hidden again; CONTROLS toggles the list.
+- `?test=headlights` — **PASS, 0 console errors**, both haze states.
+  Haze on: asphalt in beam +116.7 mean / 100% pixels > 10, painted rear
+  +151.9 / 100%, outside beam 0.0. Haze off: identical numbers (+116.7 /
+  +151.9 / 0.0) — the patches all sit within 300 m, where the night fog
+  is already zero, so disabling the haze changes nothing at these ranges.
+  All thresholds met in both states (lit >= +20 mean, >= 90% pixels
+  > +10, unlit within 1 level).
+- Regressions, all **PASS, 0 console errors**: `?test=missions` (20
+  phases, 192,504 steps, $4,250 after mission 8, finale ends, save and
+  dossier agree); `?test=drive` (2,072 m, 64 km/h max, 3/3 waypoints,
+  red-light stop, reverse −14.0 m/s, exit/re-enter, **0 unsticks**);
+  `?test=police` (8,051 steps, 54 checks: warrant 1→3→5, roadblocks,
+  helicopter, arrest 197 steps, garage buy + restore, radio gain 0.45
+  audible / 0.001 silent, Glasspoint day blue / night warmed / lit strip
+  193.6 night vs 35 day).
+- Screenshots viewed by the builder (to /tmp only, then converted to
+  JPEG): `/tmp/palkon-f-1-title.png` — the limestone PALKON AUTO logo
+  over the midday aerial city (street grid, canal, sea at the horizon,
+  Glasspoint towers), NEW GAME + CONTROLS below; `/tmp/palkon-f-2-drive-day.png`
+  — the red coupe mid-frame on the road, brick facades both sides, a
+  pedestrian and a tree, traffic ahead; `/tmp/palkon-f-3-mission.png` —
+  Mara in teal beside the gold beacon pillar, HUD "Relay stop 2 of 4",
+  window-grid buildings and trees behind; `/tmp/palkon-f-4-night-pursuit.png`
+  — the patrol car with its light bar closing in behind the red coupe, a
+  second patrol further up the road with headlights, lit windows, HUD
+  "WARRANT ★★★☆☆".
+- Packaging: `MAKEFUN_OUTPUT_DIR=/tmp/palkon-f-pkg1 node main.ts` and
+  `.../pkg2` both exit 0; the two outputs are byte-identical
+  (sha256 7a9e990a… of the sorted file list). The output holds
+  `dossier.json` (schema makefun/dossier/v1, cover index 0 = the title,
+  exactly 4 images), `game/` (index.html + 15 src modules, including the
+  new `title.js`) and `screenshots/` (the 4 final jpgs).
+
+## Bugs found and fixed during verification
+1. The first title cover staged the sunset preset at 1,500 m out: the
+   whole city sat deep in the orange haze and read as flat dark shapes
+   under a lime-green sun disc. The cover is now the midday preset and
+   the aerial orbit is closer (1,100 m out, ~300 up), so the limestone
+   streets, the canal and the sea read — the same camera flies the live
+   title screen, so the cover is the real title screen.
+2. The mission shot staged the camera 2.5 units up and 26 m from Mara:
+   the frame was half bare plaza and she was a speck. The camera is now
+   6 units up and 16 m away, so she reads at ~60 px beside the beacon.
+3. The beacon pillar photographed as a black monolith by day (see above):
+   lampGlow tile swapped for concrete; the pillar is gold in daylight
+   and still glows at night.

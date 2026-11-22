@@ -302,6 +302,22 @@ export function createMissions(world) {
       save();
     },
 
+    /** A saved story exists when the stored save holds any progress — the
+     * title screen shows CONTINUE only then. */
+    hasSave() {
+      try {
+        if (typeof localStorage === 'undefined') return false;
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return false;
+        const saved = JSON.parse(raw);
+        return !!saved && saved.version === 1
+          && ((saved.cash | 0) > 0 || (saved.completed?.length ?? 0) > 0
+            || (saved.unlocked | 0) > 1 || (saved.evidence?.length ?? 0) > 0);
+      } catch {
+        return false;
+      }
+    },
+
     /** Arrested: the active mission fails, and Mara recovers at the civic
      * park with the same $100 penalty as a zero-health recovery. */
     arrest() {
@@ -595,12 +611,16 @@ export function createMissions(world) {
         const step = currentStep();
         if (step) {
           const pulse = 26 + 4 * Math.sin(time * 2);
+          // The beacon is concrete with a gold colour, not the lampGlow
+          // tile: lampGlow's diffuse is near-black, so by day the pillar
+          // photographed as a black monolith. Concrete takes the gold in
+          // daylight and the emissive still glows at night.
           builder.addBox(step.x, pulse / 2, step.z, 1.4, pulse, 1.4, {
-            tile: TILE.lampGlow, tileTop: TILE.lampGlow,
+            tile: TILE.concrete, tileTop: TILE.concrete,
             color: [1.0, 0.8, 0.3], gloss: 0.1, emissive: 1,
           });
           builder.addBox(step.x, 0.15, step.z, 9, 0.3, 9, {
-            tile: TILE.lampGlow, color: [1.0, 0.8, 0.3], gloss: 0.1, emissive: 0.8,
+            tile: TILE.concrete, color: [1.0, 0.8, 0.3], gloss: 0.1, emissive: 0.8,
           });
         }
       }

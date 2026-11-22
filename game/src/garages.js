@@ -171,6 +171,27 @@ export function createGarages(world) {
       return { owned: [...state.owned], parked: { ...state.parked } };
     },
 
+    /** New Game: forget every owned garage and roll each parked car out
+     * onto the street in front of its bay. The save key is already gone
+     * (the missions module removed it); the next save writes the cleared
+     * state, so a reload starts with no garages too. */
+    reset(drivableCars) {
+      for (const [gid, p] of Object.entries(state.parked)) {
+        const car = drivableCars.find((c) => c.id === p.carId);
+        const g = spots.find((s) => s.id === Number(gid));
+        if (!car || !g) continue;
+        const c = Math.cos(g.angle);
+        const s = Math.sin(g.angle);
+        car.x = g.x + 12 * s;
+        car.z = g.z + 12 * c;
+        car.angle = g.angle;
+        car.speed = 0;
+        car.garaged = null;
+      }
+      state.owned = [];
+      state.parked = {};
+    },
+
     /** Q near a for-sale garage: buy it with mission earnings. */
     tryBuy() {
       const g = nearestGarage(BUY_RANGE);

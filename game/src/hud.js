@@ -18,6 +18,7 @@ export function createHUD(city) {
   const radioEl = document.getElementById('radio');
   const titleEl = document.getElementById('title');
   const helpEl = document.getElementById('help');
+  const topleftEl = document.getElementById('topleft');
   const mapCanvas = document.getElementById('minimap');
   const mapCtx = mapCanvas.getContext('2d');
   const scaleX = MAP_W / (CITY.x1 - CITY.x0);
@@ -158,12 +159,19 @@ export function createHUD(city) {
   return {
     districtAt,
     showTitle() {
+      // The title screen is the cover: the logo and the menu over the live
+      // city, so the district panel, the minimap and the controls footer
+      // hide with it and come back when play starts.
       titleEl.style.display = 'flex';
-      helpEl.style.display = 'block';
+      helpEl.style.display = 'none';
+      topleftEl.style.display = 'none';
+      mapCanvas.style.display = 'none';
     },
     hideTitle() {
       titleEl.style.display = 'none';
-      helpEl.style.display = 'none';
+      helpEl.style.display = 'block';
+      topleftEl.style.display = 'block';
+      mapCanvas.style.display = 'block';
     },
     update(player, presetLabel, drive) {
       districtEl.textContent = districtAt(player.x, player.z).toUpperCase();

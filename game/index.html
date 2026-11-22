@@ -23,10 +23,14 @@
   #help { bottom: 14px; left: 14px; font-size: 12px; letter-spacing: 0.5px; }
   #title { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(20,45,56,0.25) 0%, rgba(20,45,56,0.78) 78%); color: #ead8b2; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; z-index: 20; text-align: center; }
   #title h1 { margin: 0; font-size: 64px; letter-spacing: 14px; font-weight: 800; text-shadow: 0 4px 24px rgba(0,0,0,0.6); }
-  #title .sub { margin-top: 8px; font-size: 16px; letter-spacing: 3px; color: #d77f69; }
-  #title .start { margin-top: 42px; font-size: 15px; letter-spacing: 5px; border: 1px solid #ead8b2; padding: 12px 28px; border-radius: 4px; }
-  #title .controls { margin-top: 26px; font-size: 13px; color: rgba(234, 216, 178, 0.85); line-height: 1.9; }
-  #title .stage { margin-top: 22px; font-size: 11px; letter-spacing: 2px; color: rgba(159, 196, 204, 0.9); }
+  #logo { width: min(560px, 82vw); height: auto; filter: drop-shadow(0 4px 24px rgba(0,0,0,0.6)); }
+  #title .sub { margin-top: 16px; font-size: 16px; letter-spacing: 6px; color: #d77f69; }
+  #title .tagline { margin-top: 10px; font-size: 15px; font-style: italic; color: rgba(234, 216, 178, 0.9); letter-spacing: 1px; }
+  #title .menu { margin-top: 36px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  #title .menu button { width: 240px; padding: 12px 0; font: 700 14px system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 4px; color: #ead8b2; background: rgba(20, 45, 56, 0.8); border: 1px solid #ead8b2; border-radius: 4px; cursor: pointer; }
+  #title .menu button:hover { background: #d77f69; color: #142d38; border-color: #d77f69; }
+  #title .menu button:focus-visible { outline: 2px solid #f2b13c; outline-offset: 2px; }
+  #title .controls { margin-top: 22px; font-size: 13px; color: rgba(234, 216, 178, 0.85); line-height: 1.9; }
   #banner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); max-width: 60%; display: none; background: rgba(215, 127, 105, 0.92); color: #142d38; font: 700 14px system-ui, -apple-system, "Segoe UI", sans-serif; padding: 10px 18px; border-radius: 6px; z-index: 15; text-align: center; }
   #dossier { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(560px, 90vw); max-height: 82vh; overflow-y: auto; display: none; background: rgba(20, 45, 56, 0.96); border: 1px solid rgba(234, 216, 178, 0.4); border-radius: 8px; padding: 18px 22px; color: #ead8b2; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; z-index: 25; }
   #dossier h2 { margin: 0 0 6px; font-size: 18px; letter-spacing: 3px; color: #d77f69; }
@@ -65,11 +69,15 @@
 <div id="dossier" aria-label="Mission dossier"></div>
 <div id="help" class="panel">WASD walk · Mouse look · Shift run · E enter / exit car · W/S drive · A/D steer · M missions · Q collect / deliver / buy garage · X drop cargo · F shove · R radio · 1 midday · 2 sunset · 3 night</div>
 <div id="title">
-  <h1>PALKON AUTO</h1>
-  <div class="sub">AN ORIGINAL OPEN-WORLD CRIME GAME · SOLMAR</div>
-  <div class="start">CLICK TO START</div>
-  <div class="controls">WASD — walk &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run<br>E — enter / exit a car &nbsp;·&nbsp; W/S — drive &nbsp;·&nbsp; A/D — steer<br>M — mission dossier &nbsp;·&nbsp; Q — collect / deliver / buy garage &nbsp;·&nbsp; X — drop cargo<br>F — shove &nbsp;·&nbsp; R — radio Solmar Common<br>1 — scorching midday &nbsp;·&nbsp; 2 — sunset &nbsp;·&nbsp; 3 — night</div>
-  <div class="stage">STAGE E — POLICE + GARAGES + RADIO</div>
+  <svg id="logo" role="img" aria-label="Palkon Auto"></svg>
+  <div class="sub">THE SOLMAR STORY</div>
+  <div class="tagline">The city has a price. Find out who is paying.</div>
+  <div class="menu">
+    <button id="menu-continue" type="button">CONTINUE</button>
+    <button id="menu-new" type="button">NEW GAME</button>
+    <button id="menu-controls" type="button">CONTROLS</button>
+  </div>
+  <div id="menu-controls-list" class="controls" hidden>WASD — walk &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run<br>E — enter / exit a car &nbsp;·&nbsp; W/S — drive &nbsp;·&nbsp; A/D — steer<br>M — mission dossier &nbsp;·&nbsp; Q — collect / deliver / buy garage &nbsp;·&nbsp; X — drop cargo<br>F — shove &nbsp;·&nbsp; R — radio Solmar Common<br>1 — scorching midday &nbsp;·&nbsp; 2 — sunset &nbsp;·&nbsp; 3 — night</div>
 </div>
 <p id="status" role="status" aria-live="polite"></p>
 <div id="errors" aria-hidden="true"></div>

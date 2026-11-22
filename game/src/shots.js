@@ -88,7 +88,11 @@ export const SHOTS = {
   // Citrus Quarter, the gold beacon ahead and the relay package in hand.
   missionRelay: {
     preset: 'day',
-    camera: { pos: [1188, 2.5, 638], target: [1200, 2, 600] },
+    // Closer and higher than the Stage D staging: the camera stands 16 m
+    // from Mara at 6 units up, so she reads at ~60 px beside the gold
+    // beacon instead of a speck over a bare plaza, and the dark building
+    // corner that crowded the old frame's left edge is out of shot.
+    camera: { pos: [1184, 6, 634], target: [1199, 4, 606] },
     mission: 5,
     mara: [480, 360],
     maraYaw: 0,
@@ -107,7 +111,7 @@ export const SHOTS = {
     maraYaw: 0,
     advance: 8,
   },
-  // Stage E: verification shots only — never added to screenshots/ (the
+  // Stage F: verification shots only — never added to screenshots/ (the
   // dossier caps the game at four). A police pursuit at 3 stars: Mara in
   // the coupe on the South Market road, patrol cars closing in, a
   // roadblock forming ahead.
@@ -136,6 +140,29 @@ export const SHOTS = {
   glasspoint: {
     preset: 'night',
     camera: { pos: [1595, 8, -1075], target: [1595, 60, -1150] },
+    advance: 8,
+  },
+  // Stage F, final shot 1 — the title cover: the aerial camera at a fixed
+  // moment over the live city at midday, with the title overlay (logo +
+  // menu) on top of it. Midday, not sunset: at sunset the whole city sits
+  // deep in the orange haze and reads as flat dark shapes, while the
+  // midday aerial shows the limestone streets and the teal sea. The camera
+  // comes from titleCameraAt, not a fixed pose, so the frame is the real
+  // title screen.
+  title: {
+    preset: 'day',
+    titleShot: true,
+    titleTime: 8,
+    advance: 8,
+  },
+  // Stage F, final shot 4 — a moonlit pursuit: the coupe at night on the
+  // South Market road, headlights on, patrol cars closing in, the warrant
+  // stars in the HUD. Same staging as the day pursuit, at night.
+  nightPursuit: {
+    preset: 'night',
+    camera: { pos: [248, 6, 324], target: [234, 2, 240] },
+    car: { profile: 'coupe', x: 240, z: 300, angle: Math.PI, color: [0.85, 0.35, 0.28] },
+    police: { stars: 3 },
     advance: 8,
   },
 };

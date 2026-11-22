@@ -19,6 +19,7 @@ import { createMissions } from './missions.js';
 import { createPolice } from './police.js';
 import { createGarages } from './garages.js';
 import { createRadio } from './radio.js';
+import { buildLogo, titleCameraAt } from './title.js';
 
 const STEP = 1 / 60;
 const MAX_FRAME = 0.25;
@@ -96,6 +97,9 @@ let presetName = 'day';
 let started = false;
 let shotMode = false;
 let shotPainted = 0;
+// Seconds on the title screen's aerial camera; it keeps drifting while the
+// title is up, so the city behind the logo is never a still frame.
+let titleTime = 0;
 // Driving state: 'foot' or 'drive', and the car being driven, if any.
 let mode = 'foot';
 let playerCar = null;
@@ -213,6 +217,44 @@ garages = createGarages({
 garageColliders = garages.colliders;
 carColliders.push(...garages.colliders);
 garages.restore(drivableCars);
+
+// The title screen: original vector lettering (drawn from code by title.js),
+// the subtitle and the tagline, and a save-aware menu — CONTINUE only
+// appears when a saved story exists. Clicking the overlay outside a button
+// starts the same way Enter does.
+buildLogo(document.getElementById('logo'));
+const titleEl = document.getElementById('title');
+const continueBtn = document.getElementById('menu-continue');
+const newGameBtn = document.getElementById('menu-new');
+const controlsBtn = document.getElementById('menu-controls');
+const controlsList = document.getElementById('menu-controls-list');
+function refreshMenu() {
+  continueBtn.style.display = missions.hasSave() ? 'block' : 'none';
+}
+refreshMenu();
+function startGame(newGame) {
+  if (started) return;
+  if (newGame) {
+    // A fresh story: the save goes (missions and garages), the parked cars
+    // roll out onto the street in front of their bays, and the menu loses
+    // its CONTINUE until something is earned again.
+    missions.debug.resetSave();
+    garages.reset(drivableCars);
+    refreshMenu();
+  }
+  started = true;
+  hud.hideTitle();
+  announce('Playing. Explore Solmar.');
+}
+continueBtn.addEventListener('click', (event) => { event.stopPropagation(); startGame(false); });
+newGameBtn.addEventListener('click', (event) => { event.stopPropagation(); startGame(true); });
+controlsBtn.addEventListener('click', (event) => {
+  event.stopPropagation();
+  controlsList.hidden = !controlsList.hidden;
+});
+titleEl.addEventListener('click', (event) => {
+  if (!event.target.closest('button')) startGame(false);
+});
 
 function renderDossier() {
   const d = missions.getDossier();
@@ -408,8 +450,13 @@ function stepDrive(dt) {
 
 /** One fixed step of the whole world: the player, the crowd, the traffic. */
 function simStep(dt) {
-  if (mode === 'drive') stepDrive(dt);
-  else stepPlayer(dt);
+  // On the title screen the player does not walk or drive — the camera is
+  // the aerial one — but the crowd, the traffic, the missions and the
+  // police still advance, so the city behind the logo is alive.
+  if (started) {
+    if (mode === 'drive') stepDrive(dt);
+    else stepPlayer(dt);
+  }
   crowd.update(dt);
   traffic.update(dt, simTime, playerCar, police.getObstacles());
   missions.update(dt);
@@ -451,6 +498,11 @@ function renderFrame(time) {
   if (shotMode) {
     // In shot mode the camera is a fixed cinematic pose, not the player's eyes.
     camera = { pos: shotCamera.pos, yaw: shotCamera.yaw, pitch: shotCamera.pitch, fov: 70 };
+  } else if (!started) {
+    // The title screen: the aerial camera, slowly flying over the real city.
+    const tc = titleCameraAt(titleTime);
+    const look = lookAtYawPitch(tc.pos, tc.target);
+    camera = { pos: tc.pos, yaw: look.yaw, pitch: look.pitch, fov: tc.fov };
   } else if (mode === 'drive' && playerCar) {
     // Chase camera: behind the car, looking down the road. Pull it in
     // step by step if a building stands where it would sit.
@@ -522,6 +574,12 @@ let shotCamera = null;
 function stageShot(name) {
   const shot = SHOTS[name] || SHOTS.day;
   setPreset(shot.preset);
+  if (shot.titleShot) {
+    // The title cover: the aerial camera at a fixed moment, over the live
+    // city, with the title overlay (logo + menu) on top of it.
+    const tc = titleCameraAt(shot.titleTime ?? 8);
+    shot.camera = { pos: tc.pos, target: tc.target };
+  }
   if (shot.garage !== undefined) {
     // A bought garage with a car in its bay: buy it, park the starter
     // coupe, and stand the camera outside the open front looking in.
@@ -552,7 +610,14 @@ function stageShot(name) {
   const { yaw, pitch } = lookAtYawPitch(shot.camera.pos, shot.camera.target);
   shotCamera = { pos: shot.camera.pos, yaw, pitch };
   shotMode = true;
-  hud.hideTitle();
+  // The title cover keeps its overlay (logo + menu) on screen; every other
+  // shot hides the title so the frame shows the game itself.
+  if (shot.titleShot) {
+    hud.showTitle();
+    refreshMenu();
+  } else {
+    hud.hideTitle();
+  }
   if (shot.signalRed !== undefined) {
     // Force that signal red at capture time: its phase at t=advance must
     // be mid-red (phase 16 of the cycle).
@@ -637,14 +702,14 @@ function runGame() {
     last = now;
     elapsed += dt;
     if (!started) {
-      // The title screen is the live city, slowly panning.
-      player.yaw += dt * 0.04;
-    } else {
-      accumulator += dt;
-      while (accumulator >= STEP) {
-        simStep(STEP);
-        accumulator -= STEP;
-      }
+      // The title screen is the live city, slowly flown over: the aerial
+      // camera drifts and the crowd and the traffic keep moving under it.
+      titleTime += dt;
+    }
+    accumulator += dt;
+    while (accumulator >= STEP) {
+      simStep(STEP);
+      accumulator -= STEP;
     }
     renderFrame(elapsed);
   }
@@ -662,9 +727,7 @@ window.addEventListener('keydown', (event) => {
   else if (event.key === '2') setPreset('sunset');
   else if (event.key === '3') setPreset('night');
   else if ((event.key === 'Enter' || event.key === ' ') && !started && !shotMode) {
-    started = true;
-    hud.hideTitle();
-    announce('Playing. Explore Solmar.');
+    startGame(false);
   } else if (event.code === 'KeyE' && started && !shotMode) {
     if (mode === 'drive') exitCar();
     else enterCar();
@@ -695,9 +758,7 @@ canvas.addEventListener('pointerdown', (event) => {
   lastMouseX = event.clientX;
   lastMouseY = event.clientY;
   if (!started && !shotMode) {
-    started = true;
-    hud.hideTitle();
-    announce('Playing. Explore Solmar.');
+    startGame(false);
   }
   canvas.setPointerCapture(event.pointerId);
 });
@@ -755,8 +816,16 @@ function patchStats(px) {
   return sum / n;
 }
 
-/** ?test=headlights — freeze a night scene and measure the headlight gain. */
+/** ?test=headlights — freeze a night scene and measure the headlight gain.
+ * &haze=off re-runs the same measurement with the haze (fog) disabled, so
+ * the two runs can be compared against the same thresholds. */
 function runHeadlightTest() {
+  const hazeOff = params.get('haze') === 'off';
+  // No haze: push the fog planes so far out that the fog factor is zero at
+  // every distance in the scene. The rest of the preset is unchanged.
+  const preset = hazeOff
+    ? { ...PRESETS.night, fogNear: 1e9, fogFar: 1e9 + 1 }
+    : PRESETS.night;
   setPreset('night');
   started = true;
   hud.hideTitle();
@@ -802,7 +871,7 @@ function runHeadlightTest() {
     renderer.setDynamic(dynamicBuilder.toArrays());
     renderer.render({
       camera: { pos: camPos, yaw, pitch, fov: 70 },
-      preset: PRESETS.night,
+      preset,
       time: 8,
       lights: lightOverride,
     });
@@ -832,10 +901,10 @@ function runHeadlightTest() {
     if (!ok) passAll = false;
     lines.push(`${p.name}: screen (${p.screen.x},${p.screen.y}) mean ${meanOff.toFixed(1)} -> ${meanOn.toFixed(1)} gain ${gain.toFixed(1)} pct>10 ${pct.toFixed(1)}% ${ok ? 'OK' : 'FAIL'}`);
   }
-  const summary = `HEADLIGHT-TEST ${passAll ? 'PASS' : 'FAIL'} | ${lines.join(' | ')}`;
+  const summary = `HEADLIGHT-TEST haze=${hazeOff ? 'off' : 'on'} ${passAll ? 'PASS' : 'FAIL'} | ${lines.join(' | ')}`;
   document.getElementById('status').textContent = summary;
   document.title = `TEST-DONE ${passAll ? 'PASS' : 'FAIL'}`;
-  window.__testResult = { test: 'headlights', pass: passAll, patches: results, summary };
+  window.__testResult = { test: 'headlights', haze: hazeOff ? 'off' : 'on', pass: passAll, patches: results, summary };
   window.__shotReady = true;
 }
 
@@ -2032,9 +2101,81 @@ function runPoliceTest() {
   finish();
 }
 
+/** ?test=title — the title screen in a real browser: the logo is drawn,
+ * the aerial camera renders the live city, CONTINUE appears only with a
+ * save, CONTINUE starts with the save intact, and NEW GAME wipes the save
+ * and hides CONTINUE again. Runs synchronously, one render at the end. */
+function runTitleTest() {
+  const statusEl = document.getElementById('status');
+  const lines = [];
+  let failed = false;
+  function check(cond, label) {
+    if (cond) lines.push(`ok ${label}`);
+    else { lines.push(`FAIL ${label}`); failed = true; }
+    return cond;
+  }
+  hud.showTitle();
+  refreshMenu();
+  // The logo: two lines of vector lettering, drawn as SVG rectangles.
+  const logoRects = document.querySelectorAll('#logo rect').length;
+  check(logoRects > 100, `logo drawn (${logoRects} rects)`);
+  // The aerial camera: high above the city, looking down at it.
+  const tc = titleCameraAt(8);
+  check(Number.isFinite(tc.pos[0]) && Number.isFinite(tc.pos[1]) && Number.isFinite(tc.pos[2]), 'aerial camera position is finite');
+  check(tc.pos[1] > 250 && tc.pos[1] < 350, `aerial camera height ${tc.pos[1].toFixed(0)}`);
+  // The title is up and the in-game HUD is hidden behind it.
+  check(document.getElementById('title').style.display === 'flex', 'title overlay shown');
+  check(document.getElementById('topleft').style.display === 'none', 'district panel hidden on title');
+  check(document.getElementById('minimap').style.display === 'none', 'minimap hidden on title');
+  // A render of the title frame: the canvas is not blank.
+  renderFrame(8);
+  const centre = readPatch(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 16);
+  const mean = patchStats(centre);
+  check(mean > 5 && mean < 250, `title frame renders (centre mean ${mean.toFixed(1)})`);
+  // CONTINUE: hidden with no save, shown once a save exists.
+  missions.debug.resetSave();
+  refreshMenu();
+  check(continueBtn.style.display === 'none', 'CONTINUE hidden with no save');
+  check(!missions.hasSave(), 'hasSave false with no save');
+  missions.debug.setCash(500);
+  check(missions.hasSave(), 'hasSave true after earning $500');
+  refreshMenu();
+  check(continueBtn.style.display === 'block', 'CONTINUE shown with a save');
+  // CONTINUE starts the game with the save intact.
+  continueBtn.click();
+  check(started, 'CONTINUE starts the game');
+  check(missions.state.cash === 500, 'cash $500 kept on CONTINUE');
+  check(document.getElementById('title').style.display === 'none', 'title hidden after CONTINUE');
+  // Back to the title, then NEW GAME wipes the save.
+  started = false;
+  hud.showTitle();
+  refreshMenu();
+  check(continueBtn.style.display === 'block', 'CONTINUE still shown before NEW GAME');
+  newGameBtn.click();
+  check(started, 'NEW GAME starts the game');
+  check(localStorage.getItem('palkon-auto-save-v1') === null, 'save removed by NEW GAME');
+  check(missions.state.cash === 0, 'cash $0 after NEW GAME');
+  check(!missions.hasSave(), 'hasSave false after NEW GAME');
+  check(continueBtn.style.display === 'none', 'CONTINUE hidden after NEW GAME');
+  // CONTROLS toggles the controls list.
+  started = false;
+  hud.showTitle();
+  controlsBtn.click();
+  check(!controlsList.hidden, 'CONTROLS shows the list');
+  controlsBtn.click();
+  check(controlsList.hidden, 'CONTROLS hides the list again');
+  const pass = !failed;
+  const summary = `TITLE-TEST ${pass ? 'PASS' : 'FAIL'} | ${lines.join(' | ')}`;
+  statusEl.textContent = summary;
+  document.title = `TEST-DONE ${pass ? 'PASS' : 'FAIL'}`;
+  window.__testResult = { test: 'title', pass, summary };
+  window.__shotReady = true;
+}
+
 if (testName === 'drive') runDriveTest();
 else if (testName === 'missions') runMissionsTest();
 else if (testName === 'headlights') runHeadlightTest();
 else if (testName === 'police') runPoliceTest();
+else if (testName === 'title') runTitleTest();
 else if (shotName) stageShot(shotName);
 else runGame();
