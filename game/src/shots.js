@@ -82,6 +82,31 @@ export const SHOTS = {
     collect: true,
     advance: 8,
   },
+  // Stage D: verification shots only — never added to screenshots/ (the
+  // dossier caps the game at four). Mission 5 in progress: Mara has
+  // activated the first relay stop and stands at the second one in
+  // Citrus Quarter, the gold beacon ahead and the relay package in hand.
+  missionRelay: {
+    preset: 'day',
+    camera: { pos: [1188, 2.5, 638], target: [1200, 2, 600] },
+    mission: 5,
+    mara: [480, 360],
+    maraYaw: 0,
+    collect: true,
+    maraTo: [1196, 620],
+    advance: 8,
+  },
+  // Stage D: verification shot only. The finale broadcast: the whole story
+  // is complete and the archive is broadcasting — the overlay shows the
+  // entry on screen while Mara stands in the civic park.
+  finale: {
+    preset: 'sunset',
+    camera: { pos: [-960, 7, -980], target: [-1000, 2, -1080] },
+    finale: true,
+    mara: [-1000, -1040],
+    maraYaw: 0,
+    advance: 8,
+  },
 };
 
 /** Camera yaw/pitch (the game's convention) for a camera looking at a target. */

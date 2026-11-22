@@ -1,9 +1,10 @@
-// The missions of Palkon Auto, stages 1–4 of the eight-mission story.
+// The missions of Palkon Auto, all eight of the story.
 // Mara Venn, a coastal courier, uncovers a private security racket run by
 // Bastion Civic and its broker, Silas Rook. The dock ledger, Oren's witness
 // statement, the payment chain, the authenticated archive, relay
 // attestations and the master agreement complete a public, independently
-// mirrored archive; missions 5–8 and the finale come in a later stage.
+// mirrored archive; the finale broadcasts all eight entries, then free
+// exploration resumes.
 // This module is the mission state machine: ordered unlocks, a saved
 // evidence log, cash rewards, timed operations, mission boundaries, an
 // escort follower, cargo the player can drop and lose, a required vehicle
@@ -29,6 +30,7 @@ const OREN_LOST_DIST = 80;
 const OREN_LOST_TIME = 15;
 const CARGO_LOST_DIST = 30;
 const CASH_PENALTY = 100;
+const FINALE_ENTRY_TIME = 3; // seconds each evidence entry stays on screen
 
 export const MISSION_DEFS = [
   {
@@ -85,6 +87,64 @@ export const MISSION_DEFS = [
       { kind: 'deliver', x: 240, z: 600, r: 6, label: 'Deliver the payment chain' },
     ],
   },
+  {
+    id: 5,
+    title: 'The Long Way Home',
+    brief: 'The archive has to be mirrored before Bastion Civic can bury it. Carry the relay package through four drop points across the city \u2014 South Market, Citrus Quarter, Glasspoint, then the north road \u2014 and bring it to the park archive.',
+    reward: 600,
+    timeLimit: 660,
+    area: { x0: -1440, z0: -1728, x1: 1920, z1: 1728 },
+    steps: [
+      { kind: 'relay', x: 480, z: 360, r: 6, label: 'Relay stop 1 of 4 \u2014 South Market',
+        evidence: { name: 'Relay route', text: 'The relay route: four drops across Solmar, mirroring the archive before Bastion Civic could bury it.' } },
+      { kind: 'relay', x: 1200, z: 600, r: 6, label: 'Relay stop 2 of 4 \u2014 Citrus Quarter' },
+      { kind: 'relay', x: 1200, z: -360, r: 6, label: 'Relay stop 3 of 4 \u2014 Glasspoint' },
+      { kind: 'relay', x: 0, z: -1080, r: 6, label: 'Relay stop 4 of 4 \u2014 the north road' },
+      { kind: 'deliver', x: -1000, z: -1080, r: 6, label: 'Deliver the relay package to the park archive' },
+    ],
+  },
+  {
+    id: 6,
+    title: 'Unbought Ground',
+    brief: 'The authenticated archive sits in the Citrus Quarter records hall. Fetch it and bring it to the park archive \u2014 Bastion Civic cannot buy what is already public record.',
+    reward: 700,
+    timeLimit: 600,
+    area: { x0: -1440, z0: -1728, x1: 1920, z1: 1728 },
+    steps: [
+      { kind: 'collect', x: 1440, z: 1080, r: 6, label: 'Collect the authenticated archive',
+        evidence: { name: 'Authenticated archive', text: 'The authenticated archive: every Bastion Civic contract, stamped and sealed by the city records hall.' } },
+      { kind: 'deliver', x: -1000, z: -1080, r: 6, label: 'Deliver the archive to the park archive' },
+    ],
+  },
+  {
+    id: 7,
+    title: 'Open Contract',
+    brief: 'The relay attestations need witnesses in four districts before they count. Carry them from the west market to the marina, across Old Solmar, and up to the Glasspoint road \u2014 then bring them to Neri\u2019s archive.',
+    reward: 800,
+    timeLimit: 780,
+    area: { x0: -1440, z0: -1728, x1: 1920, z1: 1728 },
+    steps: [
+      { kind: 'relay', x: -720, z: 840, r: 6, label: 'Relay stop 1 of 4 \u2014 the west market',
+        evidence: { name: 'Relay attestations', text: 'Relay attestations: four witnesses in four districts, each swearing the archive is real.' } },
+      { kind: 'relay', x: -1200, z: 360, r: 6, label: 'Relay stop 2 of 4 \u2014 Pearl Marina' },
+      { kind: 'relay', x: -720, z: -840, r: 6, label: 'Relay stop 3 of 4 \u2014 Old Solmar' },
+      { kind: 'relay', x: 480, z: -840, r: 6, label: 'Relay stop 4 of 4 \u2014 the Glasspoint road' },
+      { kind: 'deliver', x: 0, z: 600, r: 6, label: 'Deliver the attestations to Neri\u2019s archive' },
+    ],
+  },
+  {
+    id: 8,
+    title: 'Everyone Gets the Morning',
+    brief: 'The master agreement is in Bastion Civic\u2019s own Glasspoint office. Bring it to the park archive \u2014 and then the whole city hears it.',
+    reward: 1000,
+    timeLimit: 600,
+    area: { x0: -1440, z0: -1728, x1: 1920, z1: 1728 },
+    steps: [
+      { kind: 'collect', x: 1680, z: -1080, r: 6, label: 'Collect the master agreement',
+        evidence: { name: 'Master agreement', text: 'The master agreement: Bastion Civic\u2019s own contract, signed by Silas Rook, tying the racket together.' } },
+      { kind: 'deliver', x: -1000, z: -1080, r: 6, label: 'Deliver the agreement to the park archive' },
+    ],
+  },
 ];
 
 const ARROWS = ['\u2191', '\u2197', '\u2192', '\u2198', '\u2193', '\u2199', '\u2190', '\u2196'];
@@ -111,6 +171,9 @@ export function createMissions(world) {
     oren: { active: false, x: 0, z: 780, angle: 0, phase: 0 },
     invulnerable: 0,
     vanHitCooldown: 0,
+    // The finale: after mission 8, every evidence entry is broadcast on
+    // screen, one by one, then free exploration resumes.
+    finale: { active: false, index: 0, timer: 0, shown: 0, done: false },
   };
 
   function load() {
@@ -123,7 +186,7 @@ export function createMissions(world) {
       state.cash = saved.cash | 0;
       state.completed = Array.isArray(saved.completed) ? saved.completed : [];
       state.evidence = Array.isArray(saved.evidence) ? saved.evidence : [];
-      state.unlocked = Math.max(1, Math.min(4, saved.unlocked | 0 || 1));
+      state.unlocked = Math.max(1, Math.min(8, saved.unlocked | 0 || 1));
     } catch {
       // A corrupt or missing save starts fresh; the game never depends on it.
     }
@@ -166,7 +229,7 @@ export function createMissions(world) {
     const def = state.active.def;
     state.cash += def.reward;
     if (!state.completed.includes(def.id)) state.completed.push(def.id);
-    state.unlocked = Math.max(state.unlocked, Math.min(4, def.id + 1));
+    state.unlocked = Math.max(state.unlocked, Math.min(8, def.id + 1));
     const reward = def.reward;
     state.active = null;
     state.carrying = null;
@@ -174,6 +237,16 @@ export function createMissions(world) {
     state.oren.active = false;
     save();
     world.onEvent(`MISSION COMPLETE \u2014 ${def.title} \u00b7 +$${reward}`);
+    if (def.id === 8) startFinale();
+  }
+
+  function startFinale() {
+    state.finale.active = true;
+    state.finale.index = 0;
+    state.finale.timer = FINALE_ENTRY_TIME;
+    state.finale.shown = 0;
+    state.finale.done = false;
+    world.onEvent('THE ARCHIVE IS PUBLIC \u2014 the broadcast begins');
   }
 
   function failMission(reason) {
@@ -226,6 +299,7 @@ export function createMissions(world) {
       const def = MISSION_DEFS.find((m) => m.id === id);
       if (!def) return false;
       if (state.active) return false;
+      if (state.finale.active) return false;
       if (!opts.force && id > state.unlocked) return false;
       if (id === 4 && !world.getVan()) return false;
       state.active = {
@@ -272,6 +346,21 @@ export function createMissions(world) {
         advanceStep();
         return true;
       }
+      // A relay stop: Q activates the drop. The first stop of a relay
+      // mission logs its evidence and picks up the relay package, which
+      // the final deliver step hands in; later stops only advance.
+      if (step.kind === 'relay' && d < step.r) {
+        if (step.evidence) {
+          logEvidence(step.evidence, state.active.def.id);
+          state.carrying = step.evidence;
+        }
+        const total = state.active.def.steps.filter((s) => s.kind === 'relay').length;
+        const done = state.active.def.steps.slice(0, state.active.stepIndex + 1)
+          .filter((s) => s.kind === 'relay').length;
+        world.onEvent(`Relay stop ${done} of ${total} \u2014 ${step.label.split('\u2014 ')[1] ?? ''}`);
+        advanceStep();
+        return true;
+      }
       if (step.kind === 'deliver' && state.carrying && d < step.r) {
         state.carrying = null;
         advanceStep();
@@ -312,6 +401,26 @@ export function createMissions(world) {
           if (dist(world.player.x, world.player.z, car.x, car.z) < TRAFFIC_HIT_RADIUS) {
             damagePlayer(TRAFFIC_HIT_DAMAGE);
             break;
+          }
+        }
+      }
+      // The finale runs on its own clock: each evidence entry stays on
+      // screen for FINALE_ENTRY_TIME, then the next one shows. When the
+      // last entry has shown, the broadcast ends and free exploration
+      // resumes with all eight missions complete.
+      if (state.finale.active) {
+        const f = state.finale;
+        f.timer -= dt;
+        if (f.timer <= 0) {
+          f.shown += 1;
+          f.index += 1;
+          if (f.index >= state.evidence.length) {
+            f.active = false;
+            f.done = true;
+            save();
+            world.onEvent('BROADCAST COMPLETE \u2014 all eight entries are public \u00b7 free exploration resumes');
+          } else {
+            f.timer = FINALE_ENTRY_TIME;
           }
         }
       }
@@ -392,6 +501,12 @@ export function createMissions(world) {
 
     /** The HUD objective line: timer, compass arrow, distance, warnings. */
     getObjectiveText() {
+      if (state.finale.active) {
+        const f = state.finale;
+        const entry = state.evidence[f.index];
+        if (!entry) return 'BROADCAST \u2014 the archive is public';
+        return `BROADCAST ${f.index + 1} of ${state.evidence.length} \u2014 ${entry.name}`;
+      }
       if (!state.active) return null;
       const step = currentStep();
       if (!step) return null;
@@ -413,6 +528,20 @@ export function createMissions(world) {
         parts.push(`Oren ${Math.round(od)}m behind`);
       }
       return parts.join(' \u00b7 ');
+    },
+
+    /** The finale broadcast, for the on-screen overlay. */
+    getFinale() {
+      const f = state.finale;
+      if (!f.active) return null;
+      return {
+        active: true,
+        index: f.index,
+        total: state.evidence.length,
+        entry: state.evidence[f.index] ?? null,
+        shown: f.shown,
+        done: f.done,
+      };
     },
 
     /** Mission area + current target, for the minimap. */
@@ -508,6 +637,27 @@ export function createMissions(world) {
           state.active.vanIntegrity -= n;
           if (state.active.vanIntegrity <= 0) failMission('The courier van was destroyed');
         }
+      },
+      /** Complete the whole story at once (verification shots only): every
+       * mission done, every evidence entry logged, then the finale starts. */
+      completeAll() {
+        state.active = null;
+        state.carrying = null;
+        state.dropped = null;
+        state.oren.active = false;
+        state.completed = [];
+        state.evidence = [];
+        state.cash = 0;
+        for (const def of MISSION_DEFS) {
+          if (!state.completed.includes(def.id)) state.completed.push(def.id);
+          state.cash += def.reward;
+          for (const step of def.steps) {
+            if (step.evidence) logEvidence(step.evidence, def.id);
+          }
+        }
+        state.unlocked = 8;
+        save();
+        startFinale();
       },
     },
   };

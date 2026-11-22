@@ -413,3 +413,108 @@ night; the minimap and driving HUD are live.
    expected `unlocked === 5`, but the game caps `unlocked` at 4
    (`Math.min(4, def.id + 1)`) because Stage C defines only four
    missions. The check now expects 4.
+
+# Stage D build report — missions 5–8 and the finale
+
+## What was built
+- Missions 5–8 in `game/src/missions.js`, reusing every Stage C system
+  (ordered unlocks, dossier, evidence log, cash rewards, timer /
+  boundary / vehicle / evidence / ally failure + retry, Q/X/E keys,
+  minimap boundary outlines, objective beacons, compass arrow, timed
+  operation HUDs):
+  - 5 "The Long Way Home" ($600, 660 s): four relay stops across the
+    city — South Market (480,360), Citrus Quarter (1200,600),
+    Glasspoint (1200,−360), north road (0,−1080) — then deliver the
+    package to the park archive (−1000,−1080).
+  - 6 "Unbought Ground" ($700, 600 s): collect the authenticated
+    archive from the Citrus Quarter records hall (1440,1080), deliver
+    it to the park archive.
+  - 7 "Open Contract" ($800, 780 s): four relay stops on a different
+    route — west market (−720,840), Pearl Marina (−1200,360), Old
+    Solmar (−720,−840), Glasspoint road (480,−840) — then deliver the
+    attestations to Neri's archive (0,600).
+  - 8 "Everyone Gets the Morning" ($1000, 600 s): collect the master
+    agreement from Bastion Civic's Glasspoint office (1680,−1080),
+    deliver it to the park archive.
+- A new step kind, `relay`, in `interact()`: Q activates the drop; the
+  first relay stop logs its evidence and picks up the package (so the
+  X-drop / cargo-lost failure path applies, as in Stage C), later
+  stops only advance. The dossier's step list shows each stop as
+  done / current / pending, so the player can see which stops are done.
+- The finale: `startFinale()` runs when mission 8 completes.
+  `state.finale` advances in `update()` — each of the eight evidence
+  entries stays on screen for 3 s (`FINALE_ENTRY_TIME`), then the
+  next shows; after the last entry the broadcast ends, `finale.done`
+  is set, the save is written, and free exploration resumes with all
+  eight missions complete. `getFinale()` exposes the current entry
+  for the overlay, and `getObjectiveText()` shows the broadcast line
+  ("BROADCAST N of 8 — <entry name>") while it runs.
+- `debug.completeAll()` (verification shots only): marks all eight
+  missions complete, logs all eight evidence entries from the defs,
+  sets cash to the sum of rewards ($4,450), unlocks 8, and starts the
+  finale.
+- `game/src/main.js`: the finale overlay (`#finale`, styled like the
+  dossier/banner, with the entry name + text and progress dots,
+  updated only when the shown index changes); the dossier-open digit
+  keys extended 1–4 → 1–8 and the hint text updated; `stageShot()`
+  supports a `finale: true` shot (calls `debug.completeAll()`); the
+  missions test extended to 20 phases (see Verification).
+- `game/index.html`: the `#finale` overlay div + CSS; the stage label
+  is now "STAGE D — MISSIONS 5–8 + FINALE".
+- `game/src/shots.js`: two verification-only shots (never added to
+  `screenshots/`, which already holds the dossier cap of 4):
+  `missionRelay` (mission 5 in progress at the Citrus Quarter stop)
+  and `finale` (the broadcast overlay over the civic park at sunset).
+- Mara is now visible in shot mode: `renderFrame()` draws her with
+  `drawPersonAt` (teal shirt, so she reads as the protagonist, not a
+  pedestrian) whenever a shot camera is active and she is on foot.
+  In normal play she is the first-person camera and is never drawn;
+  in drive mode the car is drawn instead. This fixes the Stage C
+  note that Mara was tiny/invisible in the verification shots.
+
+## Verification (all in a real headless browser, SwiftShader WebGL)
+- `node --check` on every `game/src/*.js` module and `main.ts`: pass.
+- `?test=missions` (`/tmp/palkon-d-tests.sh`, serve on port 8084,
+  `--virtual-time-budget=600000`, 640×360): **MISSIONS-TEST PASS,
+  192,431 steps, 0 console errors, 0 page errors.** All 20 phases:
+  missions 1–4 (regression), mission 5 timer fail + retry, missions
+  5–8, the finale, save + dossier agreement.
+- Per-mission clean-play times and rewards (scripted walk-throughs,
+  road-following routes): M1 83.8 s / $150, M2 166.3 s / $250,
+  M3 385.9 s / $350, M4 729.0 s / $500, **M5 296.1 s / $600,
+  M6 376.5 s / $700, M7 386.7 s / $800, M8 323.6 s / $1000** — each
+  well inside its timer (660 / 600 / 780 / 600 s). Finale: 24.1 s,
+  all 8 entries shown, then free exploration resumes.
+- Clean-play cash totals: $1,150 after mission 4; $1,750 after
+  mission 5; $2,450 after mission 6; $3,250 after mission 7;
+  **$4,250 after mission 8** (the $4,450 sum of rewards minus the
+  $100 zero-health penalty from the Stage C phase-11 run). Save and
+  dossier agree: cash $4,250, 8 completed, 8 evidence, unlocked 8.
+- Failure path tested in a Stage D mission: mission 5 fails by
+  timer (3 s left, 250 steps) and is then completed on retry.
+- Screenshots viewed by the builder (to /tmp only):
+  `/tmp/palkon-d-missionRelay.png` — Mara in a teal shirt at the
+  Citrus Quarter relay stop, the beacon pillar behind her, HUD
+  "Relay stop 2 of 4 — Citrus Quarter · carrying the Relay route",
+  minimap showing the route. `/tmp/palkon-d-finale.png` — the
+  broadcast overlay "THE ARCHIVE IS PUBLIC — BROADCAST 3 OF 8 /
+  Witness statement" with progress dots over the civic park at
+  sunset, HUD objective line "BROADCAST 3 of 8 — Witness statement".
+- Packaging: `MAKEFUN_OUTPUT_DIR=/tmp/palkon-out node main.ts`
+  exits 0; the output holds `dossier.json`, `game/` (index.html +
+  11 src modules) and `screenshots/` (the same 4 jpgs).
+
+## Bugs found and fixed during verification
+1. Mission 7 failed mid-route in the test: Mara was run down by
+   traffic cars three times on one long walk leg (health 100 → 0),
+   the mission failed and she recovered to the park, but the walk
+   continued from the park and reached the stop — so `interact()`
+   failed with no active mission and no error. The game keeps its
+   damage (the traffic-hit hazard is real and already verified);
+   the test's `walkTo` now heals every 2 s of walking (at most two
+   hits, 68 damage, can land between heals), and `walkRoute` still
+   heals between legs. After the fix the whole 20-phase run passes.
+2. The missionRelay shot was staged too far away: the beacon showed
+   but Mara was a speck. Re-staged closer (camera 18 m behind her)
+   and, since the player is never drawn in first-person play, added
+   the shot-mode Mara render above.

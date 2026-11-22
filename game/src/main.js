@@ -9,7 +9,7 @@
 
 import { createRenderer, PRESETS } from './gl.js';
 import { buildCity, CITY } from './city.js';
-import { createCrowd, drawCar } from './people.js';
+import { createCrowd, drawCar, drawPersonAt } from './people.js';
 import { createHUD } from './hud.js';
 import { SHOTS, lookAtYawPitch } from './shots.js';
 import { MeshBuilder } from './mesh.js';
@@ -106,13 +106,37 @@ let lightOverride = null;
 // opens with M and lets the player start a mission by click or by key 1-4.
 const bannerEl = document.getElementById('banner');
 const dossierEl = document.getElementById('dossier');
+const finaleEl = document.getElementById('finale');
 let bannerTimer = 0;
 let dossierOpen = false;
+let finaleShownIndex = -1;
 function showBanner(text) {
   bannerEl.textContent = text;
   bannerEl.style.display = 'block';
   window.clearTimeout(bannerTimer);
   bannerTimer = window.setTimeout(() => { bannerEl.style.display = 'none'; }, 5000);
+}
+// The finale broadcast overlay: one evidence entry at a time, with its
+// number and a row of dots for the entries shown so far. It only updates
+// when the entry changes, so it never repaints every frame.
+function updateFinaleOverlay() {
+  const f = missions.getFinale();
+  if (!f || !f.entry) {
+    if (finaleShownIndex !== -1) {
+      finaleEl.style.display = 'none';
+      finaleShownIndex = -1;
+    }
+    return;
+  }
+  if (f.index === finaleShownIndex) return;
+  finaleShownIndex = f.index;
+  const dots = Array.from({ length: f.total }, (_, i) => (i < f.index ? '\u25cf' : i === f.index ? '\u25c9' : '\u25cb')).join(' ');
+  finaleEl.innerHTML = `
+    <div class="finale-kicker">THE ARCHIVE IS PUBLIC \u2014 BROADCAST ${f.index + 1} OF ${f.total}</div>
+    <div class="finale-name">${f.entry.name}</div>
+    <div class="finale-text">${f.entry.text}</div>
+    <div class="finale-dots">${dots}</div>`;
+  finaleEl.style.display = 'block';
 }
 const missions = createMissions({
   player,
@@ -146,7 +170,7 @@ function renderDossier() {
     <div class="dossier-meta">Cash $${d.cash} · Health ${d.health} · Evidence ${d.evidence.length} of ${d.evidenceTotal}</div>
     <div class="dossier-missions">${rows}</div>
     <div class="dossier-evidence"><h3>EVIDENCE LOG</h3>${evidence}</div>
-    <div class="dossier-hint">Click a mission to start it · keys 1–4 start a mission · M closes</div>`;
+    <div class="dossier-hint">Click a mission to start it · keys 1–8 start a mission · M closes</div>`;
 }
 function toggleDossier() {
   dossierOpen = !dossierOpen;
@@ -335,6 +359,13 @@ function renderFrame(time) {
   // it now is, with its headlights on if it is being driven at night).
   dynamicBuilder.reset();
   crowd.drawInto(dynamicBuilder);
+  if (shotMode && mode !== 'drive') {
+    // In shot mode Mara is visible: draw her standing where the shot put
+    // her, in a teal shirt so she reads as the protagonist, not a
+    // pedestrian. (In normal play she is the first-person camera and is
+    // never drawn; in drive mode the car is drawn instead.)
+    drawPersonAt(dynamicBuilder, player.x, player.z, player.yaw, [0.22, 0.56, 0.6], [0.72, 0.52, 0.38], 0);
+  }
   traffic.drawInto(dynamicBuilder, simTime, presetName !== 'day');
   for (const car of drivableCars) {
     drawCar(dynamicBuilder, car.x, car.z, car.angle, car.color, car.headlights);
@@ -385,6 +416,7 @@ function renderFrame(time) {
     ? { x: playerCar.x, z: playerCar.z, yaw: Math.atan2(Math.sin(playerCar.angle), -Math.cos(playerCar.angle)) }
     : player;
   hud.update(hudPlayer, preset.label, driveInfo());
+  updateFinaleOverlay();
 }
 
 let shotCamera = null;
@@ -425,6 +457,15 @@ function stageShot(name) {
       player.x = shot.maraTo[0];
       player.z = shot.maraTo[1];
     }
+  }
+  if (shot.finale) {
+    // The finale broadcast: complete the whole story at once (a debug
+    // shortcut, verification shots only), then stand Mara in the park
+    // where the camera looks while the archive broadcasts.
+    missions.debug.completeAll();
+    player.x = shot.mara[0];
+    player.z = shot.mara[1];
+    player.yaw = shot.maraYaw ?? 0;
   }
   // Let the crowd and the traffic run a few seconds in so the frame has life in it.
   const advance = shot.advance ?? 8;
@@ -470,8 +511,8 @@ function runGame() {
 }
 
 window.addEventListener('keydown', (event) => {
-  // While the dossier is open, keys 1-4 start missions instead of changing the light.
-  if (dossierOpen && ['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(event.code)) {
+  // While the dossier is open, keys 1-8 start missions instead of changing the light.
+  if (dossierOpen && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'].includes(event.code)) {
     missions.start(Number(event.code.slice(-1)));
     renderDossier();
     return;
@@ -875,7 +916,7 @@ function runMissionsTest() {
   }
   function step() {
     totalSteps += 1;
-    if (totalSteps > 400000) { error = 'step guard exceeded'; return false; }
+    if (totalSteps > 600000) { error = 'step guard exceeded'; return false; }
     simStep(STEP);
     return true;
   }
@@ -896,6 +937,11 @@ function runMissionsTest() {
     let lx = player.x;
     let lz = player.z;
     let since = 0;
+    // Heal every 2 s of walking: a traffic car can clip Mara when a
+    // sidestep puts her on its lane, and three hits would kill her
+    // mid-route. The game keeps its damage (verified by the phase-0
+    // traffic-hit check); only the test's legs start at full health.
+    let healIn = 0;
     while (true) {
       const dx = tx - player.x;
       const dz = tz - player.z;
@@ -907,6 +953,8 @@ function runMissionsTest() {
       keys.add('KeyW');
       if (run) keys.add('ShiftLeft');
       if (!step()) return false;
+      healIn += 1;
+      if (healIn >= 120) { missions.debug.setHealth(100); healIn = 0; }
       since += 1;
       if (since >= 120) {
         const moved = Math.hypot(player.x - lx, player.z - lz);
@@ -923,7 +971,13 @@ function runMissionsTest() {
     return true;
   }
   function walkRoute(points, opts) {
-    for (const [x, z] of points) { if (!walkTo(x, z, opts)) return false; }
+    for (const [x, z] of points) {
+      if (!walkTo(x, z, opts)) return false;
+      // Heal between legs: a traffic car can clip Mara on a long road
+      // walk, and three hits would kill her mid-route. The game keeps its
+      // damage; only the test's legs start at full health.
+      missions.debug.setHealth(100);
+    }
     return true;
   }
   // Drive toward (tx,tz) with the Stage B autopilot; stops early when
@@ -1005,6 +1059,7 @@ function runMissionsTest() {
   function finish() {
     keys.clear();
     const pass = !error && !failed;
+    lines.push(`results ${JSON.stringify(results)}`);
     const summary = `MISSIONS-TEST ${pass ? 'PASS' : 'FAIL'}${error ? ` | error: ${error}` : ''} | steps ${totalSteps} | ${lines.join(' | ')}`;
     statusEl.textContent = summary;
     document.title = `TEST-DONE ${pass ? 'PASS' : 'FAIL'}`;
@@ -1192,7 +1247,7 @@ function runMissionsTest() {
   lines.push(`deliver: step=${stepNow ? stepNow.kind : 'none'} carrying=${missions.state.carrying ? missions.state.carrying.name : 'none'} d=${stepNow ? Math.hypot(player.x - stepNow.x, player.z - stepNow.z).toFixed(1) : '-'}`);
   check(missions.interact(), 'deliver the payment chain (Q)');
   check(missions.state.cash === 1150, 'cash $1150 after mission 4');
-  check(missions.state.unlocked === 4, 'all four missions complete');
+  check(missions.state.unlocked === 5, 'mission 5 unlocked');
   check(missions.state.completed.length === 4, 'four missions in the completed list');
   check(missions.state.evidence.length === 4, 'four pieces of evidence logged');
   results.m4 = { seconds: +(((totalSteps - m4Start) / 60).toFixed(1)), reward: 500 };
@@ -1205,7 +1260,122 @@ function runMissionsTest() {
   check(saved && saved.evidence.length === 4, 'save holds four evidence entries');
   const dossier = missions.getDossier();
   check(dossier.cash === 1150, 'dossier shows cash $1150');
-  check(dossier.missions.every((m) => m.status === 'done'), 'dossier shows all four missions done');
+  check(dossier.missions.filter((m) => m.id <= 4).every((m) => m.status === 'done'), 'dossier shows missions 1-4 done');
+  check(dossier.missions[4].status === 'available', 'dossier shows mission 5 available');
+  check(dossier.missions.filter((m) => m.id >= 6).every((m) => m.status === 'locked'), 'dossier shows missions 6-8 locked');
+
+  // Phase 14: mission 5 fails by timer.
+  spawn();
+  missions.debug.setHealth(100);
+  check(missions.start(5), 'start mission 5');
+  missions.debug.setTimeLeft(3);
+  if (!stepN(250)) { finish(); return; }
+  check(!missions.state.active, 'mission 5 failed by timer');
+
+  // Phase 15: mission 5 completes — four relay stops across the city,
+  // then deliver the package to the park archive. All legs follow roads.
+  spawn();
+  missions.debug.setHealth(100);
+  check(missions.start(5), 'start mission 5 again');
+  const m5Start = totalSteps;
+  if (!walkRoute([[0, 360], [480, 360]])) { finish(); return; }
+  check(missions.interact(), 'relay stop 1 of 4 (Q)');
+  check(missions.state.carrying && missions.state.carrying.name === 'Relay route', 'carrying the relay package');
+  check(missions.state.evidence.some((e) => e.name === 'Relay route'), 'relay route in the evidence log');
+  if (!walkRoute([[1200, 360], [1200, 600]])) { finish(); return; }
+  check(missions.interact(), 'relay stop 2 of 4 (Q)');
+  if (!walkRoute([[1200, -360]])) { finish(); return; }
+  check(missions.interact(), 'relay stop 3 of 4 (Q)');
+  if (!walkRoute([[0, -360], [0, -1080]])) { finish(); return; }
+  check(missions.interact(), 'relay stop 4 of 4 (Q)');
+  if (!walkRoute([[-1000, -1080]])) { finish(); return; }
+  check(missions.interact(), 'deliver the relay package (Q)');
+  check(missions.state.cash === 1750, 'cash $1750 after mission 5');
+  check(missions.state.unlocked === 6, 'mission 6 unlocked');
+  results.m5 = { seconds: +(((totalSteps - m5Start) / 60).toFixed(1)), reward: 600 };
+
+  // Phase 16: mission 6 completes — fetch the authenticated archive from
+  // the Citrus Quarter records hall, deliver it to the park archive.
+  spawn();
+  missions.debug.setHealth(100);
+  check(missions.start(6), 'start mission 6');
+  const m6Start = totalSteps;
+  if (!walkRoute([[0, 360], [1440, 360], [1440, 1080]])) { finish(); return; }
+  check(missions.interact(), 'collect the authenticated archive (Q)');
+  check(missions.state.carrying && missions.state.carrying.name === 'Authenticated archive', 'carrying the archive');
+  if (!walkRoute([[0, 1080], [0, -1080], [-1000, -1080]])) { finish(); return; }
+  check(missions.interact(), 'deliver the archive (Q)');
+  check(missions.state.cash === 2450, 'cash $2450 after mission 6');
+  check(missions.state.unlocked === 7, 'mission 7 unlocked');
+  results.m6 = { seconds: +(((totalSteps - m6Start) / 60).toFixed(1)), reward: 700 };
+
+  // Phase 17: mission 7 completes — four relay stops on a different route
+  // (west market, marina, Old Solmar, Glasspoint road), then deliver the
+  // attestations to Neri's archive.
+  spawn();
+  missions.debug.setHealth(100);
+  check(missions.start(7), 'start mission 7');
+  const m7Start = totalSteps;
+  if (!walkRoute([[0, 360], [-720, 360], [-720, 840]])) { finish(); return; }
+  check(missions.interact(), 'relay stop 1 of 4 (Q)');
+  check(missions.state.carrying && missions.state.carrying.name === 'Relay attestations', 'carrying the attestations');
+  if (!walkRoute([[-1200, 840], [-1200, 360]])) { finish(); return; }
+  check(missions.interact(), 'relay stop 2 of 4 (Q)');
+  if (!walkRoute([[-720, 360], [-720, -840]])) { finish(); return; }
+  check(missions.interact(), 'relay stop 3 of 4 (Q)');
+  if (!walkRoute([[480, -840]])) { finish(); return; }
+  check(missions.interact(), 'relay stop 4 of 4 (Q)');
+  if (!walkRoute([[480, 600], [0, 600]])) { finish(); return; }
+  check(missions.interact(), 'deliver the attestations (Q)');
+  check(missions.state.cash === 3250, 'cash $3250 after mission 7');
+  check(missions.state.unlocked === 8, 'mission 8 unlocked');
+  results.m7 = { seconds: +(((totalSteps - m7Start) / 60).toFixed(1)), reward: 800 };
+
+  // Phase 18: mission 8 completes — collect the master agreement from
+  // Bastion Civic's Glasspoint office, deliver it to the park archive.
+  // The finale starts on its own the moment mission 8 completes.
+  spawn();
+  missions.debug.setHealth(100);
+  check(missions.start(8), 'start mission 8');
+  const m8Start = totalSteps;
+  if (!walkRoute([[0, 360], [1680, 360], [1680, -1080]])) { finish(); return; }
+  check(missions.interact(), 'collect the master agreement (Q)');
+  check(missions.state.carrying && missions.state.carrying.name === 'Master agreement', 'carrying the master agreement');
+  if (!walkRoute([[-1000, -1080]])) { finish(); return; }
+  check(missions.interact(), 'deliver the master agreement (Q)');
+  check(missions.state.cash === 4250, 'cash $4250 after mission 8');
+  check(missions.state.completed.length === 8, 'eight missions in the completed list');
+  check(missions.state.evidence.length === 8, 'eight pieces of evidence logged');
+  check(missions.state.finale.active, 'finale starts after mission 8');
+  check(missions.getFinale() && missions.getFinale().entry.name === 'Delivery receipt', 'finale opens on the first entry');
+  results.m8 = { seconds: +(((totalSteps - m8Start) / 60).toFixed(1)), reward: 1000 };
+
+  // Phase 19: the finale broadcasts all eight entries, one by one, then
+  // ends and free exploration resumes.
+  let finaleSteps = 0;
+  while (missions.state.finale.active && finaleSteps < 3000) {
+    if (!step()) break;
+    finaleSteps += 1;
+  }
+  check(!missions.state.finale.active, 'finale ends after the last entry');
+  check(missions.state.finale.done, 'finale marked done');
+  check(missions.state.finale.shown === 8, 'finale showed all eight entries');
+  check(!missions.state.active, 'no mission active after the finale');
+  check(missions.getFinale() === null, 'finale overlay data clears after the broadcast');
+  results.finale = { seconds: +(finaleSteps / 60).toFixed(1), entries: missions.state.finale.shown };
+
+  // Phase 20: the save on disk and the dossier agree with the full story.
+  let savedAll = null;
+  try { savedAll = JSON.parse(localStorage.getItem('palkon-auto-save-v1')); } catch { savedAll = null; }
+  check(savedAll && savedAll.cash === 4250, 'save holds cash $4250');
+  check(savedAll && savedAll.completed.length === 8, 'save holds eight completed missions');
+  check(savedAll && savedAll.evidence.length === 8, 'save holds eight evidence entries');
+  check(savedAll && savedAll.unlocked === 8, 'save holds unlocked 8');
+  const dossierAll = missions.getDossier();
+  check(dossierAll.cash === 4250, 'dossier shows cash $4250');
+  check(dossierAll.missions.every((m) => m.status === 'done'), 'dossier shows all eight missions done');
+  check(dossierAll.evidence.length === 8, 'dossier shows eight evidence entries');
+  results.totals = { cash: missions.state.cash, completed: missions.state.completed.length, evidence: missions.state.evidence.length };
 
   finish();
 }

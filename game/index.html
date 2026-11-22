@@ -38,6 +38,11 @@
   #dossier .mission-reward { font-size: 12px; color: #f2b13c; margin-top: 4px; }
   #dossier .evidence-row { font-size: 12px; line-height: 1.5; margin-bottom: 4px; }
   #dossier .dossier-hint { font-size: 11px; color: rgba(159, 196, 204, 0.9); margin-top: 12px; }
+  #finale { position: absolute; top: 84px; left: 50%; transform: translateX(-50%); width: min(520px, 88vw); display: none; background: rgba(20, 45, 56, 0.94); border: 1px solid rgba(242, 177, 60, 0.6); border-radius: 8px; padding: 14px 20px; color: #ead8b2; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; z-index: 18; text-align: center; }
+  #finale .finale-kicker { font-size: 11px; letter-spacing: 3px; color: #f2b13c; font-weight: 700; }
+  #finale .finale-name { font-size: 20px; font-weight: 800; letter-spacing: 1px; margin-top: 6px; }
+  #finale .finale-text { font-size: 13px; line-height: 1.5; margin-top: 6px; color: rgba(234, 216, 178, 0.9); }
+  #finale .finale-dots { font-size: 12px; letter-spacing: 4px; color: #f2b13c; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -52,6 +57,7 @@
 </div>
 <canvas id="minimap" width="200" height="184" aria-label="Minimap of Solmar"></canvas>
 <div id="banner" aria-live="polite"></div>
+<div id="finale" aria-live="polite"></div>
 <div id="dossier" aria-label="Mission dossier"></div>
 <div id="help" class="panel">WASD walk · Mouse look · Shift run · E enter / exit car · W/S drive · A/D steer · M missions · Q collect / deliver · X drop cargo · 1 midday · 2 sunset · 3 night</div>
 <div id="title">
@@ -59,7 +65,7 @@
   <div class="sub">AN ORIGINAL OPEN-WORLD CRIME GAME · SOLMAR</div>
   <div class="start">CLICK TO START</div>
   <div class="controls">WASD — walk &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run<br>E — enter / exit a car &nbsp;·&nbsp; W/S — drive &nbsp;·&nbsp; A/D — steer<br>M — mission dossier &nbsp;·&nbsp; Q — collect / deliver &nbsp;·&nbsp; X — drop cargo<br>1 — scorching midday &nbsp;·&nbsp; 2 — sunset &nbsp;·&nbsp; 3 — night</div>
-  <div class="stage">STAGE C — MISSIONS 1–4</div>
+  <div class="stage">STAGE D — MISSIONS 5–8 + FINALE</div>
 </div>
 <p id="status" role="status" aria-live="polite"></p>
 <div id="errors" aria-hidden="true"></div>
