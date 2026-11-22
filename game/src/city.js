@@ -32,6 +32,12 @@ const BRIDGE_XS = [-480, 0, 480];
 
 const ROAD_XS = [-1200, -960, -720, -480, -240, 0, 240, 480, 720, 960, 1200, 1440, 1680];
 const ROAD_ZS = [-1560, -1320, -1080, -840, -600, -360, -120, 120, 360, 600, 840, 1080, 1320, 1560];
+
+// A coordinate is on a road's driving line when it is within 12 of a road
+// centreline. Street furniture and parked cars must stay clear of
+// intersections, or a car driving the crossing road cannot pass.
+function nearRoadX(x) { return ROAD_XS.some((rx) => Math.abs(x - rx) < 12); }
+function nearRoadZ(z) { return ROAD_ZS.some((rz) => Math.abs(z - rz) < 12); }
 const BLOCK_XS = [-1440, -1200, -960, -720, -480, -240, 0, 240, 480, 720, 960, 1200, 1440, 1680, 1920];
 const BLOCK_ZS = [-1728, -1560, -1320, -1080, -840, -600, -360, -120, 120, 360, 600, 840, 1080, 1320, 1560, 1728];
 
@@ -72,6 +78,7 @@ export function buildCity(seed) {
   const rng = createRandom(seed);
   const mesh = new MeshBuilder();
   const colliders = [];
+  const streetColliders = [];
   const lamps = [];
   const parkedCars = [];
   const walkLoops = [];
@@ -197,6 +204,7 @@ export function buildCity(seed) {
     mesh.addSphere(x, 3.6 + s * 0.4, z, s, {
       color: [rng.range(0.75, 1), rng.range(0.9, 1.1), rng.range(0.75, 1)], gloss: 0,
     });
+    streetColliders.push({ x0: x - 0.8, z0: z - 0.8, x1: x + 0.8, z1: z + 0.8 });
     treeCount += 1;
   }
   for (let i = 0; i < 90; i += 1) {
@@ -207,22 +215,33 @@ export function buildCity(seed) {
   }
   for (const x of ROAD_XS) {
     for (let z = CITY.z0 + 60; z < CITY.z1 - 40; z += rng.range(150, 260)) {
-      if (rng.chance(0.5)) plantTree(x + 16, z);
-      if (rng.chance(0.5)) plantTree(x - 16, z + 40);
+      // A tree whose z lands on a crossing road would stand in the middle
+      // of it. Shift it along the road instead of skipping it, so the
+      // seeded layout keeps the same number of trees and the same RNG stream.
+      const zA = nearRoadZ(z) ? z + 25 : z;
+      const zB = nearRoadZ(z + 40) ? z + 65 : z + 40;
+      if (rng.chance(0.5)) plantTree(x + 16, zA);
+      if (rng.chance(0.5)) plantTree(x - 16, zB);
     }
   }
   for (let i = 0; i < 60; i += 1) {
-    plantTree(rng.range(700, 1860), rng.range(-500, 1660));
+    let tx = rng.range(700, 1860);
+    let tz = rng.range(-500, 1660);
+    if (nearRoadX(tx)) tx += 25;
+    if (nearRoadZ(tz)) tz += 25;
+    plantTree(tx, tz);
   }
 
   // --- Lamp posts along the main roads.
   for (const x of [-1200, -480, 0, 480, 1200]) {
     for (let z = CITY.z0 + 80; z < CITY.z1 - 40; z += 170) {
+      if (nearRoadZ(z)) continue; // keep the intersection clear
       lamps.push({ x: x + 13, z });
     }
   }
   for (const z of [-840, -120, 360, 1080]) {
     for (let x = CITY.x0 + 560; x < CITY.x1 - 40; x += 170) {
+      if (nearRoadX(x)) continue; // keep the intersection clear
       lamps.push({ x, z: z + 13 });
     }
   }
@@ -235,6 +254,7 @@ export function buildCity(seed) {
     mesh.addBox(lamp.x, 5.9, lamp.z + 1.1, 1.6, 0.5, 0.7, {
       tile: TILE.lampGlow, tileTop: TILE.lampGlow, color: [1, 0.85, 0.6], gloss: 0.2, emissive: 1,
     });
+    streetColliders.push({ x0: lamp.x - 0.3, z0: lamp.z - 0.3, x1: lamp.x + 0.3, z1: lamp.z + 0.3 });
   }
 
   // --- The harbour: wooden docks and three moored boats.
@@ -262,13 +282,18 @@ export function buildCity(seed) {
     const x = rng.range(PARK.x0 + 20, PARK.x1 - 20);
     const z = rng.range(PARK.z0 + 20, PARK.z1 - 20);
     mesh.addBox(x, 0.5, z, 4, 1, 1.2, { tile: TILE.wood, color: [0.6, 0.45, 0.3], gloss: 0.1 });
+    streetColliders.push({ x0: x - 2, z0: z - 0.6, x1: x + 2, z1: z + 0.6 });
   }
 
   // --- Parked cars along the roads.
   for (let i = 0; i < 44; i += 1) {
     const vertical = rng.chance(0.5);
     const road = rng.pick(vertical ? ROAD_XS : ROAD_ZS);
-    const along = rng.range(-1500, 1500);
+    let along = rng.range(-1500, 1500);
+    // A parked car whose along-position lands on a crossing road would sit
+    // in the middle of it. Shift it along its own road instead of skipping
+    // it, so the seeded layout keeps the same RNG stream.
+    if (vertical ? nearRoadZ(along) : nearRoadX(along)) along += 25;
     const side = rng.chance(0.5) ? 15 : -15;
     const x = vertical ? road + side : along;
     const z = vertical ? along : road + side;
@@ -287,16 +312,19 @@ export function buildCity(seed) {
   function plantTreeFixed(x, z, s) {
     mesh.addBox(x, 1.4, z, 0.7, 2.8, 0.7, { tile: TILE.wood, color: [0.55, 0.4, 0.25], gloss: 0 });
     mesh.addSphere(x, 3.6 + s * 0.4, z, s, { color: [0.85, 0.95, 0.85], gloss: 0 });
+    streetColliders.push({ x0: x - 0.8, z0: z - 0.8, x1: x + 0.8, z1: z + 0.8 });
     treeCount += 1;
   }
   function plantPalm(x, z) {
     // A tall thin trunk and a flat crown, so the beach reads as palms.
     mesh.addBox(x, 3.5, z, 0.5, 7, 0.5, { tile: TILE.wood, color: [0.6, 0.48, 0.32], gloss: 0 });
     mesh.addSphere(x, 7.4, z, 2.4, { color: [0.45, 0.75, 0.4], gloss: 0 });
+    streetColliders.push({ x0: x - 0.8, z0: z - 0.8, x1: x + 0.8, z1: z + 0.8 });
     treeCount += 1;
   }
   function addBench(x, z) {
     mesh.addBox(x, 0.5, z, 4, 1, 1.2, { tile: TILE.wood, color: [0.6, 0.45, 0.3], gloss: 0.1 });
+    streetColliders.push({ x0: x - 2, z0: z - 0.6, x1: x + 2, z1: z + 0.6 });
   }
   // Parked cars on the Canal Ward road the day camera looks down.
   for (const [x, z, ci] of [[6, 10, 0], [-6, -100, 1], [6, -150, 4], [-6, 30, 2]]) {
@@ -353,6 +381,7 @@ export function buildCity(seed) {
     districts: DISTRICTS,
     staticArrays: mesh.toArrays(),
     colliders,
+    streetColliders,
     lamps,
     parkedCars,
     walkLoops,

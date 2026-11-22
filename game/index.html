@@ -15,6 +15,8 @@
   #district { font-size: 26px; font-weight: 700; letter-spacing: 1px; line-height: 1.1; }
   #preset { font-size: 12px; letter-spacing: 2px; color: #9fc4cc; margin-top: 2px; }
   #coords { font-size: 11px; color: rgba(234, 216, 178, 0.7); margin-top: 4px; }
+  #speed { font-size: 13px; font-weight: 700; color: #f2b13c; margin-top: 6px; letter-spacing: 1px; }
+  #objective { font-size: 11px; color: rgba(234, 216, 178, 0.85); margin-top: 2px; }
   #minimap { position: absolute; top: 14px; right: 14px; width: 200px; height: 184px; border: 1px solid rgba(234, 216, 178, 0.4); border-radius: 6px; z-index: 10; background: #101c26; }
   #help { bottom: 14px; left: 14px; font-size: 12px; letter-spacing: 0.5px; }
   #title { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(20,45,56,0.25) 0%, rgba(20,45,56,0.78) 78%); color: #ead8b2; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; z-index: 20; text-align: center; }
@@ -32,15 +34,17 @@
   <div id="district">CANAL WARD</div>
   <div id="preset">MIDDAY — SCORCHING SUN</div>
   <div id="coords">X 0 · Z 320</div>
+  <div id="speed">ON FOOT</div>
+  <div id="objective">Explore Solmar — press E near a car to drive</div>
 </div>
 <canvas id="minimap" width="200" height="184" aria-label="Minimap of Solmar"></canvas>
-<div id="help" class="panel">WASD walk · Mouse look · Shift run · 1 midday · 2 sunset · 3 night</div>
+<div id="help" class="panel">WASD walk · Mouse look · Shift run · E enter / exit car · W/S drive · A/D steer · 1 midday · 2 sunset · 3 night</div>
 <div id="title">
   <h1>PALKON AUTO</h1>
   <div class="sub">AN ORIGINAL OPEN-WORLD CRIME GAME · SOLMAR</div>
   <div class="start">CLICK TO START</div>
-  <div class="controls">WASD — walk &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run<br>1 — scorching midday &nbsp;·&nbsp; 2 — sunset &nbsp;·&nbsp; 3 — night</div>
-  <div class="stage">STAGE A — RENDERER + CITY</div>
+  <div class="controls">WASD — walk &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run<br>E — enter / exit a car &nbsp;·&nbsp; W/S — drive &nbsp;·&nbsp; A/D — steer<br>1 — scorching midday &nbsp;·&nbsp; 2 — sunset &nbsp;·&nbsp; 3 — night</div>
+  <div class="stage">STAGE B — VEHICLES + TRAFFIC</div>
 </div>
 <p id="status" role="status" aria-live="polite"></p>
 <div id="errors" aria-hidden="true"></div>

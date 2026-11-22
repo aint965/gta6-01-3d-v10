@@ -28,6 +28,36 @@ export const SHOTS = {
     preset: 'night',
     camera: { pos: [-1440, 6, 300], target: [-1440, 6, -350] },
   },
+  // Stage B: daytime drive. The player sits in a coupe on the South Market
+  // road, facing south down the road; the camera stands behind and right
+  // of the car, looking down the road through the traffic.
+  driveDay: {
+    preset: 'day',
+    camera: { pos: [248, 5, 318], target: [234, 2, 240] },
+    car: { profile: 'coupe', x: 240, z: 300, angle: 0, color: [0.85, 0.35, 0.28] },
+    advance: 8,
+  },
+  // Stage B: night drive with headlights. The player sits in a sedan on the
+  // Glasspoint road, facing north; the camera stands behind the car, close
+  // enough that the car fills the frame and the headlight pool on the road
+  // ahead of it reads clearly.
+  driveNight: {
+    preset: 'night',
+    camera: { pos: [480, 5, 14], target: [480, 1, -40] },
+    car: { profile: 'sedan', x: 480, z: 0, angle: Math.PI, color: [0.22, 0.56, 0.6] },
+    advance: 8,
+  },
+  // Stage B: a red signal. The camera stands west of the Canal Ward
+  // junction, looking east into the signal head's lamps, with the cars
+  // stopped at the red in the foreground; the signal is forced red at
+  // capture time and the traffic has run for 38 seconds, so a car is
+  // waiting at the stop line.
+  signal: {
+    preset: 'day',
+    camera: { pos: [-25, 5, -348], target: [0, 4, -360] },
+    signalRed: 0,
+    advance: 38,
+  },
 };
 
 /** Camera yaw/pitch (the game's convention) for a camera looking at a target. */

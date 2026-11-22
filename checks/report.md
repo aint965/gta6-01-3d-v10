@@ -60,21 +60,6 @@ teal #398e99, ink #142d38, leaf #56856b.
   v24.22.1, exit 0) produced `game/` (9 source files), `screenshots/`
   (the 3 JPEGs) and `dossier.json` (schema `makefun/dossier/v1`).
 
-## Bugs found and fixed during verification
-
-1. Facade atlas painted mostly black: the tile painter accumulated
-   `save()`/`clip()`/`translate()` without `restore()`. Fixed with an
-   absolute per-tile transform.
-2. Atlas tiles repeated across the whole texture instead of one tile:
-   repeat uvs now stay raw and wrap inside the face's tile rect in the
-   fragment shader (new per-vertex tile attribute).
-3. Two screenshot cameras were inside buildings (interior walls filled the
-   frame). Cameras moved to clear ground; backface culling enabled for the
-   city/sea.
-4. Sky dome vanished after culling was enabled: its front faces point
-   inward, so culling is off for the sky pass (this also restored the sun
-   disc, which the uniform clear colour had been hiding).
-
 ## Known limitations (Stage A scope)
 
 - The city is a walkable diorama: no missions, no wanted system, no
@@ -137,3 +122,142 @@ staging and the foreground density — no later-stage systems.
 - Packaging: `MAKEFUN_OUTPUT_DIR=/tmp/palkon-out node main.ts` (Node
   v24.22.1, exit 0) produced `game/` (9 source files), `screenshots/`
   (the 3 JPEGs) and `dossier.json` (schema `makefun/dossier/v1`).
+
+# Stage B build report
+
+Stage B: vehicles, traffic, headlights. The player can walk up to a car,
+get in with E, drive it, and get out; traffic follows five lane loops and
+stops for red signals; headlights light the road and the cars ahead at
+night; the minimap and driving HUD are live.
+
+## What was built
+
+- `game/src/vehicles.js` (new) — four driving profiles, pure maths, no DOM:
+  compact (accel 7.0, brake 26, max 40 m/s), sedan (6.0, 24, 46), van
+  (4.5, 20, 34), coupe (9.0, 30, 55); speed-dependent steering
+  (maxSteer / (1 + speed * steerFalloff)); swept sub-step collision
+  (<=0.5 units) with two axle circles against AABB colliders and circle
+  obstacles, axis slide, speed zeroed when a slide makes no progress.
+  `headlightPositions()` returns two point lights ahead of the nose
+  (radius 34, warm [1.0, 0.88, 0.66]).
+- `game/src/traffic.js` (new) — five lane loops on real roads (Canal Ward
+  ring, South Market, Citrus Quarter, Old Solmar, Glasspoint), 20 traffic
+  cars with car-following (gap <30 slows, <12 stops) and signal stops
+  (stop line = signal arc - 12; stopping distance speed^2/16 + 6); the
+  player's car is an obstacle when within 7 lateral and 25 ahead. Six
+  3D signals with a 22 s cycle (green 8, yellow 2, all-red 2, red 8,
+  yellow 2), pole on the right of travel, arm over the lane, head facing
+  oncoming traffic. **Traffic drives on the right, 5 units off the
+  centreline** (offset swings around corners over 10 m, so no teleport),
+  so a player driving the wrong way down a one-way leg passes the
+  oncoming cars instead of meeting them head-on.
+- `game/src/people.js` — `drawCar` + `rotBox` exported; `drawCar` takes a
+  `headlights` flag (two emissive lens boxes on the nose); the six
+  off-road movers on `city.carLoop` removed (traffic replaces them);
+  `buildMesh()` replaced by `drawInto(builder)` (people only — parked
+  cars are drawn by the driving modules so a driven-away car is never
+  drawn twice).
+- `game/src/city.js` — `streetColliders` added and returned (AABBs for
+  every lamp, tree/palm, bench). **Road-clearance fix (Stage B):** lamps,
+  street trees and parked cars no longer land in intersections — lamp
+  posts skip positions within 12 of a crossing road; trees and parked
+  cars shift 25 along their own road instead (same RNG stream, same
+  counts). Before the fix a lamp post stood at (0, 373), dead centre of
+  the x=0 road, and no car could drive south out of South Market.
+- `game/src/hud.js` — `#speed` (e.g. "87 KM/H · COUPE" / "ON FOOT") and
+  `#objective` lines; minimap draws signals (green/red dots), traffic
+  cars (amber), parked cars (grey).
+- `game/src/main.js` — drivable cars (44 parked + 2 starters by the
+  spawn), `carColliders` (architecture + street furniture + city edge),
+  enter/exit (E within 5 units; exit to the car's right, fallback left,
+  then behind; the car persists), `stepDrive` (A = left, D = right —
+  the car's angle grows toward +x when it faces +z, which is screen-left
+  in the chase cam, so D maps to negative steer), chase camera (13 m
+  back, pulled in through [13, 9, 6, 3.5] if a building stands there),
+  headlights on when driving at night (merged with the nearest 4 lamps;
+  the renderer takes at most 6 lights), a shared dynamic MeshBuilder
+  rebuilt every frame (crowd + traffic + signals + every drivable car),
+  `?test=drive` and `?test=headlights` hooks, and `simStep(dt)` shared
+  by the main loop and the shot staging.
+- `game/src/shots.js` + `shots.json` — three new scenes: `driveDay`
+  (coupe on the South Market road), `driveNight` (sedan on the
+  Glasspoint road, headlights on), `signal` (signal 0 forced red, a car
+  waiting at its stop line). **Screenshots cap: the dossier allows at
+  most 4 screenshots, and Stage A already has 3, so only
+  `4-night-drive.jpg` is added to `screenshots/`** (the drive-day and
+  signal scenes are captured to /tmp for verification and viewing only).
+- `game/index.html` — `#speed` / `#objective` divs, help text now
+  includes "E enter / exit car · W/S drive · A/D steer", stage label
+  "STAGE B — VEHICLES + TRAFFIC".
+
+## Verification (all in a real headless browser, SwiftShader WebGL)
+
+- Physics, in Node (`/tmp/palkon-profiles.mjs`, pure `vehicles.js`):
+  0–60 mph — compact 3.83 s, sedan 4.48 s, van 5.97 s, coupe 2.98 s;
+  top speeds — compact 144 km/h, sedan 166, van 122, coupe 198;
+  coupe braking from 198 km/h: 1.87 s / 50.0 m; sedan reverse reaches
+  12 m/s; full lock at 30 m/s: 83.1° in 2 s. Two bugs found and fixed
+  by the test: steerFalloff was far too weak (was 0.035–0.05, full lock
+  at 30 m/s spun 336.6° in 2 s) and a zero-progress axis slide left the
+  car sitting against a wall at full speed.
+- `?test=drive` — scripted play-through, **PASS, 0 console errors,
+  0 page errors**: entered Coupe, drove (0,300) → (0,830) → (470,840)
+  → (480,130), 2,055 m, max 64 km/h, districts **South Market /
+  Canal Ward**, traffic observed stopped at a red signal (**loop 3
+  red**), braked to a stop, reversed to **-14.0 m/s**, exited at
+  (481,156) (the car persisted), re-entered the Sedan, drove it north;
+  **0 unsticks** (no deadlock). The test runs synchronously: the
+  headless shell throttles requestAnimationFrame to a few frames, so
+  the first rAF-driven version never finished there (a minimal rAF
+  counter page confirmed 0 frames fire); the simulation is pure JS and
+  runs in ~2 s wall time, with one render at the end to smoke-check
+  the chase camera.
+- `?test=headlights` — night scene frozen, **PASS, 0 console errors,
+  0 page errors**: asphalt in the beam mean 47.5 → 164.1, **gain
+  +116.7, 100% of pixels +10**; painted rear of the car ahead (just
+  below the roof line — the roof's top face is edge-on from the chase
+  camera, so the patch samples the painted rear it crowns) mean 44.3
+  → 196.3, **gain +151.9, 100% of pixels +10**; asphalt outside the
+  beam mean 31.5 → 31.5, **gain 0.0** (within one level). The first
+  geometry put the parked car 30 m ahead, where it covered only ~10 px
+  of the 16 px patch; moving it to 20 m ahead and centring the patch
+  on the rear face fixed it.
+- Screenshots captured at 1280x720 and viewed (all `<title>READY</title>`,
+  `#errors` empty, **0 console errors, 0 page errors**):
+  - drive-day (verification only, /tmp) — coral coupe large on the
+    South Market road, brick buildings with windows both sides, HUD
+    "0 KM/H · COUPE", minimap with the player and cars.
+  - `screenshots/4-night-drive.jpg` (93,896 B) — teal sedan from
+    behind at night, the headlight pool bright on the road ahead of
+    it, lit windows on the left building, stars, minimap.
+  - signal (verification only, /tmp) — the signal gantry with the red
+    lamp glowing, a brown van stopped at the red in the foreground.
+  The first captures had the cars too small and the signal head unread;
+  the cameras were moved closer (drive-night to 14 m behind the car,
+  signal to 25 m west of the head, advance 38 s so a car is waiting
+  at the stop line) and re-captured.
+- Bugs found and fixed while verifying (see above): the lamp post at
+  (0,373) and other furniture in intersections; the head-on traffic
+  deadlock (right-side offset); the drive test's `stoppedAtRed`
+  detection referenced `signalIndex`, a field traffic cars do not
+  have (it now finds the signal by loop and checks the car's arc
+  distance to its stop line); the headlight patch geometry.
+- Packaging: `MAKEFUN_OUTPUT_DIR=/tmp/palkon-out node main.ts`
+  (exit 0) produced `game/` (10 source files), `screenshots/` (the
+  4 JPEGs, all under the 256 KiB limit) and `dossier.json` (schema
+  `makefun/dossier/v1`, `images` lists all 4).
+
+## Bugs found and fixed during verification
+
+1. Facade atlas painted mostly black: the tile painter accumulated
+   `save()`/`clip()`/`translate()` without `restore()`. Fixed with an
+   absolute per-tile transform.
+2. Atlas tiles repeated across the whole texture instead of one tile:
+   repeat uvs now stay raw and wrap inside the face's tile rect in the
+   fragment shader (new per-vertex tile attribute).
+3. Two screenshot cameras were inside buildings (interior walls filled the
+   frame). Cameras moved to clear ground; backface culling enabled for the
+   city/sea.
+4. Sky dome vanished after culling was enabled: its front faces point
+   inward, so culling is off for the sky pass (this also restored the sun
+   disc, which the uniform clear colour had been hiding).

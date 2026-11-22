@@ -4,7 +4,7 @@
 // traffic are lit by the same world-space light as the buildings.
 
 import { createRandom } from './rng.js';
-import { MeshBuilder, TILE, tileUV } from './mesh.js';
+import { TILE, tileUV } from './mesh.js';
 
 const SHIRTS = [
   [0.85, 0.35, 0.28], [0.22, 0.56, 0.6], [0.95, 0.75, 0.2], [0.95, 0.95, 0.9],
@@ -15,7 +15,7 @@ const SKINS = [
 ];
 
 /** A box rotated around Y, for cars and people that face a direction. */
-function rotBox(b, cx, cy, cz, w, h, d, angle, opts = {}) {
+export function rotBox(b, cx, cy, cz, w, h, d, angle, opts = {}) {
   const tile = opts.tile ?? TILE.limestone;
   const tileTop = opts.tileTop ?? TILE.roof;
   const color = opts.color ?? [1, 1, 1];
@@ -73,7 +73,7 @@ function drawPerson(b, p) {
   });
 }
 
-function drawCar(b, x, z, angle, color) {
+export function drawCar(b, x, z, angle, color, headlights = false) {
   // Body, cabin and wheels: the paint catches the sun, the glass catches it more.
   rotBox(b, x, 0.55, z, 2.0, 0.85, 4.6, angle, {
     tile: TILE.concrete, color, gloss: 0.9,
@@ -89,6 +89,17 @@ function drawCar(b, x, z, angle, color) {
     rotBox(b, wx, 0.32, wz, 0.32, 0.64, 0.64, angle, {
       tile: TILE.darkWall, color: [0.08, 0.08, 0.1], gloss: 0.2,
     });
+  }
+  if (headlights) {
+    // Two lit lenses on the nose; the renderer lights the road ahead with
+    // point lights, these lenses are the visible source of the beam.
+    for (const lx of [-0.65, 0.65]) {
+      const wx = x + lx * c + 2.32 * s;
+      const wz = z - lx * s + 2.32 * c;
+      rotBox(b, wx, 0.55, wz, 0.4, 0.28, 0.15, angle, {
+        tile: TILE.lampGlow, color: [1.0, 0.95, 0.8], gloss: 0.1, emissive: 1.2,
+      });
+    }
   }
 }
 
@@ -121,7 +132,6 @@ function loopLength(loop) {
 
 export function createCrowd(city, seed) {
   const rng = createRandom(seed ^ 0x5f3759df);
-  const builder = new MeshBuilder();
   const people = [];
   for (let i = 0; i < 60; i += 1) {
     const loop = rng.pick(city.walkLoops);
@@ -136,21 +146,6 @@ export function createCrowd(city, seed) {
       x: 0, z: 0, angle: 0,
     });
   }
-  const movers = [];
-  for (let i = 0; i < 6; i += 1) {
-    movers.push({
-      loop: city.carLoop,
-      length: loopLength(city.carLoop),
-      distance: (i / 6) * loopLength(city.carLoop),
-      speed: rng.range(11, 15),
-      color: rng.pick([
-        [0.85, 0.35, 0.28], [0.22, 0.56, 0.6], [0.92, 0.9, 0.85],
-        [0.16, 0.18, 0.22], [0.95, 0.75, 0.2], [0.5, 0.3, 0.55],
-      ]),
-      x: 0, z: 0, angle: 0,
-    });
-  }
-
   return {
     update(dt) {
       for (const p of people) {
@@ -161,20 +156,12 @@ export function createCrowd(city, seed) {
         p.angle = pos.angle;
         p.phase += dt * p.speed * 4.2;
       }
-      for (const car of movers) {
-        car.distance = (car.distance + car.speed * dt) % car.length;
-        const pos = pointOnLoop(car.loop, car.distance);
-        car.x = pos.x;
-        car.z = pos.z;
-        car.angle = pos.angle;
-      }
     },
-    buildMesh() {
-      builder.reset();
+    /** Draw the pedestrians into the shared dynamic mesh. Parked and
+     * traffic cars are drawn by the driving modules, not here, so a car the
+     * player drove away is never drawn twice. */
+    drawInto(builder) {
       for (const p of people) drawPerson(builder, p);
-      for (const car of city.parkedCars) drawCar(builder, car.x, car.z, car.angle, car.color);
-      for (const car of movers) drawCar(builder, car.x, car.z, car.angle, car.color);
-      return builder.toArrays();
     },
   };
 }

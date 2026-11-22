@@ -12,6 +12,8 @@ export function createHUD(city) {
   const districtEl = document.getElementById('district');
   const presetEl = document.getElementById('preset');
   const coordsEl = document.getElementById('coords');
+  const speedEl = document.getElementById('speed');
+  const objectiveEl = document.getElementById('objective');
   const titleEl = document.getElementById('title');
   const helpEl = document.getElementById('help');
   const mapCanvas = document.getElementById('minimap');
@@ -28,7 +30,7 @@ export function createHUD(city) {
     return 'Solmar';
   }
 
-  function drawMinimap(player) {
+  function drawMinimap(player, drive) {
     const g = mapCtx;
     g.clearRect(0, 0, MAP_W, MAP_H);
     g.fillStyle = '#101c26';
@@ -61,6 +63,24 @@ export function createHUD(city) {
     // The park.
     g.fillStyle = '#56856b';
     g.fillRect(toMapX(-1200), toMapZ(-1400), 400 * scaleX, 400 * scaleZ);
+    if (drive) {
+      // Traffic signals: green or red dots at their posts.
+      for (const s of drive.signals ?? []) {
+        g.fillStyle = s.state === 'green' ? '#3ddc6a' : '#ff5a4a';
+        g.beginPath();
+        g.arc(toMapX(s.x), toMapZ(s.z), 2.5, 0, Math.PI * 2);
+        g.fill();
+      }
+      // Traffic cars, amber; parked cars, small grey.
+      g.fillStyle = '#f2b13c';
+      for (const c of drive.traffic ?? []) {
+        g.fillRect(toMapX(c.x) - 1.5, toMapZ(c.z) - 1.5, 3, 3);
+      }
+      g.fillStyle = 'rgba(200, 205, 210, 0.7)';
+      for (const c of drive.parked ?? []) {
+        g.fillRect(toMapX(c.x) - 1, toMapZ(c.z) - 1, 2, 2);
+      }
+    }
     // The player: a dot with a heading wedge.
     const px = toMapX(player.x);
     const pz = toMapZ(player.z);
@@ -86,11 +106,19 @@ export function createHUD(city) {
       titleEl.style.display = 'none';
       helpEl.style.display = 'none';
     },
-    update(player, presetLabel) {
+    update(player, presetLabel, drive) {
       districtEl.textContent = districtAt(player.x, player.z).toUpperCase();
       presetEl.textContent = presetLabel;
       coordsEl.textContent = `X ${Math.round(player.x)} · Z ${Math.round(player.z)}`;
-      drawMinimap(player);
+      if (speedEl) {
+        speedEl.textContent = drive && drive.mode === 'drive'
+          ? `${Math.round(drive.speedKmh)} KM/H · ${drive.profile.toUpperCase()}`
+          : 'ON FOOT';
+      }
+      if (objectiveEl) {
+        objectiveEl.textContent = drive ? drive.objective : 'Explore Solmar';
+      }
+      drawMinimap(player, drive);
     },
   };
 }
