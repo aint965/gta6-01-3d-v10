@@ -30,8 +30,8 @@ const HARBOR = { x0: -1560, z0: -120, x1: -1260, z1: 260 };
 const CANAL = { x0: -600, z0: -220, x1: 600, z1: -180 };
 const BRIDGE_XS = [-480, 0, 480];
 
-const ROAD_XS = [-1200, -960, -720, -480, -240, 0, 240, 480, 720, 960, 1200, 1440, 1680];
-const ROAD_ZS = [-1560, -1320, -1080, -840, -600, -360, -120, 120, 360, 600, 840, 1080, 1320, 1560];
+export const ROAD_XS = [-1200, -960, -720, -480, -240, 0, 240, 480, 720, 960, 1200, 1440, 1680];
+export const ROAD_ZS = [-1560, -1320, -1080, -840, -600, -360, -120, 120, 360, 600, 840, 1080, 1320, 1560];
 
 // A coordinate is on a road's driving line when it is within 12 of a road
 // centreline. Street furniture and parked cars must stay clear of
@@ -82,6 +82,7 @@ export function buildCity(seed) {
   const lamps = [];
   const parkedCars = [];
   const walkLoops = [];
+  const towers = [];
   const exclusions = [PARK, PLAZA, HARBOR, CANAL];
   let buildingCount = 0;
   let treeCount = 0;
@@ -194,21 +195,40 @@ export function buildCity(seed) {
   // driving through Glasspoint was blocked in both directions. A tower
   // that would overlap a road is skipped; the rng draws above still run,
   // so the towers that do clear a road keep their seeded positions.
+  // A single random plot rarely clears a road strip (the towers are wide
+  // and Glasspoint's roads run every 240 m), so each tower retries up to
+  // 24 plots before giving up — the district keeps its skyline instead of
+  // collapsing to the one tower a single try each used to leave.
   for (let i = 0; i < 12; i += 1) {
-    const px = rng.range(700, 1820);
-    const pz = rng.range(-1620, -700);
-    const w = rng.range(42, 64);
-    const d = rng.range(42, 64);
-    const h = rng.range(58, 140);
-    const foot = { x0: px - w / 2 - 4, z0: pz - d / 2 - 4, x1: px + w / 2 + 4, z1: pz + d / 2 + 4 };
-    if (colliders.some((col) => rectsOverlap(foot, col))) continue;
-    if (ROAD_XS.some((rx) => foot.x0 < rx + 10 && foot.x1 > rx - 10)) continue;
-    if (ROAD_ZS.some((rz) => foot.z0 < rz + 10 && foot.z1 > rz - 10)) continue;
-    placeBuilding(px, pz, w, d, h, [TILE.glassBlue, TILE.glassTeal], rng);
-    // A lit crown on the tallest towers.
-    mesh.addBox(px, h + 2, pz, w * 0.4, 4, d * 0.4, {
-      tile: TILE.lampGlow, tileTop: TILE.lampGlow, color: [1, 0.85, 0.6], gloss: 0.2, emissive: 1,
-    });
+    let placed = false;
+    for (let attempt = 0; attempt < 24 && !placed; attempt += 1) {
+      const px = rng.range(700, 1820);
+      const pz = rng.range(-1620, -700);
+      const w = rng.range(42, 64);
+      const d = rng.range(42, 64);
+      const h = rng.range(58, 140);
+      const foot = { x0: px - w / 2 - 4, z0: pz - d / 2 - 4, x1: px + w / 2 + 4, z1: pz + d / 2 + 4 };
+      if (colliders.some((col) => rectsOverlap(foot, col))) continue;
+      if (ROAD_XS.some((rx) => foot.x0 < rx + 10 && foot.x1 > rx - 10)) continue;
+      if (ROAD_ZS.some((rz) => foot.z0 < rz + 10 && foot.z1 > rz - 10)) continue;
+      placeBuilding(px, pz, w, d, h, [TILE.glassBlue, TILE.glassTeal], rng);
+      towers.push({ x: px, z: pz, w, d, h });
+      // A lit crown on the tallest towers.
+      mesh.addBox(px, h + 2, pz, w * 0.4, 4, d * 0.4, {
+        tile: TILE.lampGlow, tileTop: TILE.lampGlow, color: [1, 0.85, 0.6], gloss: 0.2, emissive: 1,
+      });
+      // Lit office panes: thin warm strips on the four faces. They carry
+      // emissive, so the preset's lamp glow leaves them dark at midday and
+      // lights them after dark — Glasspoint reads as offices at night.
+      const stripH = h * 0.7;
+      const stripY = h * 0.55;
+      const stripOpts = { tile: TILE.lampGlow, color: [1, 0.85, 0.6], gloss: 0.2, emissive: 0.9 };
+      mesh.addBox(px, stripY, pz + d / 2 + 0.15, 4, stripH, 0.3, stripOpts);
+      mesh.addBox(px, stripY, pz - d / 2 - 0.15, 4, stripH, 0.3, stripOpts);
+      mesh.addBox(px + w / 2 + 0.15, stripY, pz, 0.3, stripH, 4, stripOpts);
+      mesh.addBox(px - w / 2 - 0.15, stripY, pz, 0.3, stripH, 4, stripOpts);
+      placed = true;
+    }
   }
 
   // --- Trees: the park, the street edges, and Citrus Quarter.
@@ -399,6 +419,7 @@ export function buildCity(seed) {
     lamps,
     parkedCars,
     walkLoops,
+    towers,
     carLoop,
     spawn: { x: 0, z: 320, yaw: 0 },
     bounds: { x0: CITY.x0 + 20, x1: CITY.x1 - 20, z0: CITY.z0 + 20, z1: CITY.z1 - 20 },

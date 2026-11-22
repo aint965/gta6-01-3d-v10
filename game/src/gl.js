@@ -98,7 +98,7 @@ export const PRESETS = {
     horizon: [0.72, 0.86, 0.93],
     fog: [0.78, 0.87, 0.93],
     fogNear: 800, fogFar: 4200,
-    emissive: 0, lampGlow: 0, shadow: true, night: 0, sunsetBand: 0,
+    emissive: 0, lampGlow: 0, shadow: true, night: 0, sunsetBand: 0, reflect: 0.55,
     moonDir: normalize3([0.45, 0.6, 0.35]), moonColor: [0.3, 0.36, 0.5],
   },
   sunset: {
@@ -110,7 +110,7 @@ export const PRESETS = {
     horizon: [1.0, 0.55, 0.25],
     fog: [0.85, 0.55, 0.4],
     fogNear: 400, fogFar: 2200,
-    emissive: 0.25, lampGlow: 0.4, shadow: true, night: 0.15, sunsetBand: 1,
+    emissive: 0.25, lampGlow: 0.4, shadow: true, night: 0.15, sunsetBand: 1, reflect: 0.7,
     moonDir: normalize3([0.45, 0.6, 0.35]), moonColor: [0.3, 0.36, 0.5],
   },
   night: {
@@ -122,7 +122,7 @@ export const PRESETS = {
     horizon: [0.05, 0.09, 0.16],
     fog: [0.04, 0.06, 0.1],
     fogNear: 300, fogFar: 1800,
-    emissive: 1, lampGlow: 1, shadow: false, night: 1, sunsetBand: 0,
+    emissive: 1, lampGlow: 1, shadow: false, night: 1, sunsetBand: 0, reflect: 0.25,
     moonDir: normalize3([0.45, 0.6, 0.35]), moonColor: [0.55, 0.65, 0.85],
   },
 };
@@ -172,6 +172,8 @@ uniform vec3 u_camPos;
 uniform vec3 u_sunDir;
 uniform vec3 u_sunColor;
 uniform vec3 u_ambient;
+uniform vec3 u_horizon;
+uniform float u_reflect;
 uniform vec3 u_fogColor;
 uniform float u_fogNear;
 uniform float u_fogFar;
@@ -210,6 +212,16 @@ void main() {
   vec3 H = normalize(u_sunDir + V);
   float spec = pow(max(dot(N, H), 0.0), 24.0) * v_col.a * diff * sh;
   vec3 col = base * (u_ambient + u_sunColor * diff * sh) + u_sunColor * spec;
+  // Fresnel sky reflection: glossy surfaces (glass towers, car paint) pick
+  // up the horizon colour at grazing angles, so Glasspoint glares at
+  // midday, glows warm at sunset, and stays dark at night. The strength
+  // follows the surface gloss (v_col.a) and the preset's reflect factor.
+  // Energy-conserving: as the reflection grows the diffuse fades, so a
+  // red car seen side-on at a grazing angle keeps its paint instead of
+  // washing out to grey under a full-strength additive sky wash.
+  float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+  float refl = clamp(fres * v_col.a * u_reflect, 0.0, 0.6);
+  col = col * (1.0 - refl) + u_horizon * refl;
   col += texture(u_emissive, tuv).rgb * u_emissiveStrength;
   col += v_emi * vec3(1.0, 0.8, 0.5) * u_lampGlow;
   for (int i = 0; i < 6; i++) {
@@ -544,6 +556,7 @@ export function createRenderer(canvas) {
 
   const opaqueU = uniformLocations(opaqueProgram, [
     'u_viewProj', 'u_lightViewProj', 'u_camPos', 'u_sunDir', 'u_sunColor', 'u_ambient',
+    'u_horizon', 'u_reflect',
     'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_shadowOn', 'u_emissiveStrength',
     'u_lampGlow', 'u_lightCount', 'u_lights', 'u_lightColors',
     'u_diffuse', 'u_emissive', 'u_shadow',
@@ -676,6 +689,8 @@ export function createRenderer(canvas) {
       gl.uniform3fv(opaqueU.u_sunDir, preset.sunDir);
       gl.uniform3fv(opaqueU.u_sunColor, preset.sunColor);
       gl.uniform3fv(opaqueU.u_ambient, preset.ambient);
+      gl.uniform3fv(opaqueU.u_horizon, preset.horizon);
+      gl.uniform1f(opaqueU.u_reflect, preset.reflect);
       gl.uniform3fv(opaqueU.u_fogColor, preset.fog);
       gl.uniform1f(opaqueU.u_fogNear, preset.fogNear);
       gl.uniform1f(opaqueU.u_fogFar, preset.fogFar);

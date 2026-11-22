@@ -518,3 +518,155 @@ night; the minimap and driving HUD are live.
    but Mara was a speck. Re-staged closer (camera 18 m behind her)
    and, since the player is never drawn in first-person play, added
    the shot-mode Mara render above.
+
+# Stage E build report — police, combat, garages, radio
+
+## What was built
+- `game/src/police.js` (new): witnessed crimes and the escalating
+  police response. A crime counts only when witnessed (a traffic car,
+  patrol car, or the guard within 60 m): a red light is +1 star, a
+  witnessed collision +1, a shove +2. The warrant rises 1–5 stars and
+  decays 1 star per 20 s after 30 s quiet. Patrol cars spawn on the
+  nearest road and pursue (1 at 1 star, up to 3); at 3 stars two
+  roadblocks of two cars plus a striped barrier form ahead on clear
+  road; at 4 stars a helicopter circles at 60 m with a night
+  searchlight. A 2.5-second arrest meter fills when police are close
+  (2× while grappled) and drains out of range; on fill Mara is
+  arrested — recovery to the civic park, a $100 cash penalty, and any
+  active mission fails. An armed guard stands at the Glasspoint
+  office (1200,−1072): he grapples a wanted Mara within 5 m, and
+  Mara's shove (F) breaks the grapple, pushes him back 8 m, and is
+  itself a witnessed crime (+2 stars). Combat cannot trivially beat
+  the response: the shove feeds the warrant, and the grapple doubles
+  the arrest meter.
+- `game/src/garages.js` (new): three buyable garages — South Market
+  $400 (30,760), Citrus Quarter $700 (940,1040), Glasspoint $1000
+  (940,−1360). Each sits on the first plot clear of colliders, off
+  the road strip but within 30 m of a road, facing it. Bought with Q
+  (cash check, deducts, saves); owned garages and parked cars persist
+  in the same `palkon-auto-save-v1` save as cash and evidence. A car
+  left in an owned bay stays there across a reload (restored by its
+  stable vehicle id). For-sale garages show a gold sign and a bobbing
+  gold diamond; owned ones a teal sign.
+- `game/src/radio.js` (new): "Solmar Common", a WebAudio station of
+  8 original local news headlines over a synthesized bulletin bed
+  (55 Hz + 82.41 Hz drone, filtered noise, a plucked pentatonic
+  16-step loop, a two-note sting before each headline, a new headline
+  every 20 s, spoken by `speechSynthesis` when voices exist). No
+  audio files, no copied music. Plays while driving, toggled with R;
+  the HUD carries a `♪ SOLMAR COMMON — <headline>` ticker.
+- Denser streets: crowd 60 → 110 pedestrians, traffic 20 → 32 cars
+  (6–7 per loop). Distance LOD keeps the budget: pedestrians render
+  full < 150 m, torso+head 150–400 m, torso only beyond; cars lose
+  wheels and headlight lenses beyond 400 m.
+- Updated lighting: Glasspoint now places 11 of its 12 towers (the
+  Stage A placement only ever landed 1 — a wide footprint rarely
+  cleared a road strip, so each tower now retries up to 24 plots).
+  Lit office strips on the tower faces and a Fresnel sky reflection
+  (gloss × preset reflect, energy-conserving: the diffuse fades as
+  the reflection grows) distinguish Glasspoint across midday, sunset,
+  and night. Car paint gloss 0.9 → 0.6 so a flank at a grazing angle
+  keeps its colour instead of mirroring the sky grey.
+- HUD and minimap: a `#wanted` line (warrant stars, `ARREST n%`,
+  `GRABBED — PRESS F`), a `#radio` ticker, and minimap markers for
+  patrol cars (blue), roadblocks (red), the helicopter (white ring),
+  the guard (gold), and garages (owned green, for sale gold outline).
+  The dossier adds a Garages section and the warrant to its meta line.
+- Three verification-only shots (never into `screenshots/` — the
+  dossier caps at 4 and 4 already exist): `policePursuit` (day, 3
+  stars, coupe + two patrol cars), `garage` (day, bought South Market
+  garage with the red starter coupe in its bay), `glasspoint` (night,
+  the tallest tower's lit panes and crown).
+
+## Verification (all in a real headless browser, SwiftShader WebGL)
+- `?test=police` — **PASS, 8,051 steps, 0 console errors,
+  0 page errors**, 54 checks. Density: 110 pedestrians (Stage B:
+  60), 32 traffic cars (Stage B: 20); far crowd 2,640 < near crowd
+  2,760 verts; dynamic mesh 9,528 < 40,000 budget. Warrant
+  escalation: red light crossed on red with a witness 5.5 m away →
+  1 star + 1 patrol; 2 witnessed rams → 3 stars + 2 roadblocks + 3
+  patrol cars; guard grapple (meter 0.44) + shove → 5 stars, guard
+  pushed 9.2 m, helicopter joins. Arrest: 197 steps (the 2.5 s
+  meter), recovery at the civic park, cash $4,050 → $3,950 (−$100),
+  active mission 1 failed, warrant cleared, health 100. Garage:
+  bought South Market for $400, cash $4,050, car parked in the bay,
+  save holds cash / owned garage / parked car, 1 car restored from
+  the save sitting in its bay. Radio: on/off while driving, headline
+  advanced on the 20 s bulletin, gain 0.44 audible / 0.001 silent.
+  Glasspoint: day face blue (B−R 24.8), night face warmed by lit
+  panes (R/B 0.79 vs 0.70 day), sunset face warm (R−B 15.2), lit
+  strip 193.7 at night vs 35.3 day, 108.1 at sunset.
+- Regressions, all **PASS, 0 console errors**: `?test=missions`
+  (20 phases, 192,504 steps, clean-play totals unchanged: M1
+  83.8 s / $150, M2 166.3 s / $250, M3 385.9 s / $350, M8 $1000,
+  $4,250 after mission 8); `?test=drive` (2,072 m, 64 km/h max,
+  3/3 waypoints, red-light stop, reverse −14.0 m/s, exit/re-enter,
+  **0 unsticks**); `?test=headlights` (asphalt in beam +116.7 mean /
+  100% pixels > 10, painted rear +151.9 / 100%, outside beam 0.0).
+- Screenshots viewed by the builder (to /tmp only):
+  `/tmp/palkon-e-policePursuit.png` — the dark-blue patrol car with
+  its red+blue light bar closing in behind the red coupe, a second
+  patrol further up the road, HUD "WARRANT ★★★☆☆".
+  `/tmp/palkon-e-garage.png` — the red starter coupe parked in the
+  bought South Market garage (brick walls, window grids, roof), the
+  teal owned-sign on its post at the right. `/tmp/palkon-e-glasspoint.png`
+  — three Glasspoint towers at night, warm lit window grids on dark
+  blue glass, the tallest tower's bright vertical lit strip.
+- Packaging: `MAKEFUN_OUTPUT_DIR=/tmp/palkon-e-pkg node main.ts`
+  exits 0; the output holds `dossier.json`, `game/` (index.html +
+  14 src modules, including the new `police.js`, `garages.js`,
+  `radio.js`) and `screenshots/` (the same 4 jpgs).
+
+## Bugs found and fixed during verification
+1. The red-light witness was placed before the wait for red: it
+   drove through on green and was at d 572 (x 92) by the crossing,
+   so nobody witnessed the crime. The witness is now placed after
+   the light is red (d 440, 5.5 m from the crossing).
+2. The helicopter check raced its spawn — the heli is created on
+   the next police update after the stars rise. The test now steps
+   60 sim steps after the shove before checking.
+3. The radio gain was measured before the real-time audio ramp
+   settled (the synchronous drive is ~70 ms of wall time, the ramp
+   is 0.3 s). The test now busy-waits 600 ms of real time after
+   toggling on; the silent check waits 600 ms after toggling off.
+4. The night-glass check ("R−B > 5") was too strong: the face stays
+   blue-dominant at night (moonlit glass), the lit panes only warm
+   its R/B ratio. The check is now the ratio (0.79 vs 0.70 day) plus
+   a sunset warm check (R−B 15.2).
+5. The garage sign panel rendered as a black slab by day: the
+   lampGlow tile's diffuse is near-black and its emissive only shows
+   at sunset/night. The panel and the bobbing diamond now use the
+   concrete tile (bright diffuse, takes the teal/gold) with the
+   emissive attribute kept for the night glow.
+6. The garage shot parked a grey car: `find(c => c.profile ===
+   'coupe')` returned the first parked coupe (random colour), not
+   the red starter coupe. It now matches the starter by position
+   (0,300). The shot was also re-staged three-quarter and low, with
+   the car at the front of the bay, so its red flank reads instead
+   of its dark glass roof.
+7. The police shot staged the coupe facing the camera, which put
+   patrol 1 behind the camera and patrol 0 half-hidden behind the
+   coupe. The coupe now faces away (angle π) and the camera sits
+   10 m behind patrol 0, so the closing patrol is fully in frame.
+8. The Fresnel reflection was additive, so car paint washed to grey
+   at grazing angles. It is now energy-conserving (diffuse fades as
+   the reflection grows, capped at 0.6) and paint gloss dropped
+   0.9 → 0.6; the Glasspoint patch numbers are unchanged.
+9. Missions regression: the van deadlocked head-on with oncoming
+   traffic on the z=−360 road — the autopilot drove the centreline
+   and has no avoidance, so a stopped oncoming car pinned it at
+   (818,−362), then (962,−362). `driveLoop` (and the drive test's
+   autopilot) now aim `lane` metres to the right of the direct line
+   (5 m, matching the traffic's lane); the van legs and the
+   Glasspoint drive route pass `lane: 5`. The queue-wait is capped
+   at 30 s of stuck time, after which the unstick reverses with
+   steer to break a deadlock instead of straight back into it.
+10. Missions regression: the guard's touch grapple (3 m, any stars)
+    froze Mara on the office-mission path, which runs straight
+    through the guard post to (1200,−1080). The guard now grapples
+    only a wanted Mara (5 m); an innocent courier can walk up to
+    the office, which missions 5–8 require.
+11. Drive regression: the coupe met the parked mission van at
+    (480,300) dead-on and the straight unstick could not get around
+    it (18 unsticks, timeout). The drive test's autopilot now uses
+    the same right-lane aim; the test passes with 0 unsticks.

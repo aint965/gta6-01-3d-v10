@@ -31,9 +31,16 @@ export const PROFILES = {
 
 export const PROFILE_NAMES = ['compact', 'sedan', 'van', 'coupe'];
 
+// Every car gets a stable id, in creation order: the city cars, the two
+// starters and the courier van are always created in the same order, so the
+// same car has the same id on every load — the garages use it to put a
+// parked car back in its bay after a reload.
+let nextVehicleId = 1;
+
 export function createVehicle(profileName, x, z, angle, color) {
   const profile = PROFILES[profileName] ?? PROFILES.sedan;
   return {
+    id: `car-${nextVehicleId++}`,
     profile: profileName,
     name: profile.name,
     x, z, angle,

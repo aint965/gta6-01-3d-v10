@@ -16,6 +16,9 @@ import { MeshBuilder } from './mesh.js';
 import { createVehicle, stepVehicle, speedKmh, headlightPositions, PROFILE_NAMES } from './vehicles.js';
 import { createTraffic, signalState, SIGNAL_CYCLE } from './traffic.js';
 import { createMissions } from './missions.js';
+import { createPolice } from './police.js';
+import { createGarages } from './garages.js';
+import { createRadio } from './radio.js';
 
 const STEP = 1 / 60;
 const MAX_FRAME = 0.25;
@@ -100,6 +103,14 @@ let playerCar = null;
 let simTime = 0;
 // The headlight test overrides the light list for its two renders.
 let lightOverride = null;
+// The garage walls, filled in once the garages are built; the on-foot
+// collision check reads them from here.
+let garageColliders = [];
+// The police and the garages are created after the missions (they need the
+// mission state for arrests and for the save); the radio stands alone.
+let police = null;
+let garages = null;
+const radio = createRadio();
 
 // Missions 1-4: the dossier, the evidence log, the cash and Mara's health.
 // The banner shows each mission event for five seconds; the dossier overlay
@@ -145,12 +156,63 @@ const missions = createMissions({
   getVan: () => missionVan,
   collide: (x, z) => collide(x, z),
   traffic,
+  getGarageSave: () => (garages ? garages.getSave() : undefined),
   onEvent: (text) => {
     announce(text);
     showBanner(text);
     if (dossierOpen) renderDossier();
   },
 });
+
+// The police: witnessed crimes, the warrant, patrol cars, roadblocks, the
+// helicopter, and the Glasspoint guard. An arrest fails the active mission
+// and recovers Mara at the park — the mission module owns that part.
+function handleArrest() {
+  if (mode === 'drive' && playerCar) {
+    const car = playerCar;
+    car.speed = 0;
+    car.headlights = false;
+    playerCar = null;
+    mode = 'foot';
+  }
+  missions.arrest();
+}
+police = createPolice({
+  player,
+  getMode: () => mode,
+  getPlayerCar: () => playerCar,
+  collide: (x, z) => collide(x, z),
+  traffic,
+  carColliders,
+  drivableCars,
+  getTime: () => simTime,
+  onEvent: (text) => {
+    announce(text);
+    showBanner(text);
+    if (dossierOpen) renderDossier();
+  },
+  onArrest: () => handleArrest(),
+});
+
+// The garages: bought with mission earnings, and a parked car stays in its
+// bay across loads. Their walls block walking and driving, and a stored car
+// is moved back into its bay on a fresh load.
+garages = createGarages({
+  player,
+  getMode: () => mode,
+  getPlayerCar: () => playerCar,
+  collide: (x, z) => collide(x, z),
+  city,
+  missions,
+  onEvent: (text) => {
+    announce(text);
+    showBanner(text);
+    if (dossierOpen) renderDossier();
+  },
+});
+garageColliders = garages.colliders;
+carColliders.push(...garages.colliders);
+garages.restore(drivableCars);
 
 function renderDossier() {
   const d = missions.getDossier();
@@ -165,12 +227,15 @@ function renderDossier() {
   const evidence = d.evidence.length
     ? d.evidence.map((e) => `<div class="evidence-row"><b>${e.name}</b> — ${e.text}</div>`).join('')
     : '<div class="evidence-row">No evidence yet.</div>';
+  const garageRows = garages.getDossier().map((g) => `<div class="evidence-row"><b>${g.name}</b> — ${g.owned ? `OWNED${g.parked ? ` \u00b7 ${g.parked} parked` : ' \u00b7 empty'}` : `FOR SALE $${g.price}`}</div>`).join('');
+  const stars = police ? '\u2605'.repeat(police.getState().stars) + '\u2606'.repeat(5 - police.getState().stars) : '\u2606\u2606\u2606\u2606\u2606';
   dossierEl.innerHTML = `
     <h2>MISSION DOSSIER</h2>
-    <div class="dossier-meta">Cash $${d.cash} · Health ${d.health} · Evidence ${d.evidence.length} of ${d.evidenceTotal}</div>
+    <div class="dossier-meta">Cash $${d.cash} · Health ${d.health} · Warrant ${stars} · Evidence ${d.evidence.length} of ${d.evidenceTotal}</div>
     <div class="dossier-missions">${rows}</div>
     <div class="dossier-evidence"><h3>EVIDENCE LOG</h3>${evidence}</div>
-    <div class="dossier-hint">Click a mission to start it · keys 1–8 start a mission · M closes</div>`;
+    <div class="dossier-evidence"><h3>GARAGES</h3>${garageRows}</div>
+    <div class="dossier-hint">Click a mission to start it · keys 1–8 start a mission · M closes · Walk to a garage and press Q to buy it · Park a car by getting out inside it</div>`;
 }
 function toggleDossier() {
   dossierOpen = !dossierOpen;
@@ -211,6 +276,12 @@ function collide(x, z) {
       z + PLAYER_RADIUS > c.z0 && z - PLAYER_RADIUS < c.z1
     ) return true;
   }
+  for (const c of garageColliders) {
+    if (
+      x + PLAYER_RADIUS > c.x0 && x - PLAYER_RADIUS < c.x1 &&
+      z + PLAYER_RADIUS > c.z0 && z - PLAYER_RADIUS < c.z1
+    ) return true;
+  }
   return false;
 }
 
@@ -222,6 +293,8 @@ function movePlayer(dx, dz) {
 }
 
 function stepPlayer(dt) {
+  // Grabbed by the Glasspoint guard: Mara cannot move until she shoves him off.
+  if (police.isGrappled()) return;
   let forward = 0;
   let strafe = 0;
   if (keys.has('KeyW') || keys.has('ArrowUp')) forward += 1;
@@ -268,6 +341,7 @@ function enterCar() {
   playerCar = car;
   mode = 'drive';
   car.headlights = presetName !== 'day';
+  garages.onEnterCar(car);
   announce(`Driving. ${car.name}.`);
   return true;
 }
@@ -291,6 +365,8 @@ function exitCar() {
   car.headlights = false;
   playerCar = null;
   mode = 'foot';
+  // Getting out inside an owned garage parks the car there.
+  garages.onExitCar(car);
   announce('On foot.');
 }
 
@@ -300,6 +376,7 @@ function driveObstacles() {
     if (car !== playerCar) obs.push({ x: car.x, z: car.z, r: 2.6 });
   }
   for (const car of traffic.cars) obs.push({ x: car.x, z: car.z, r: 2.6 });
+  for (const o of police.getObstacles()) obs.push(o);
   return obs;
 }
 
@@ -316,7 +393,16 @@ function stepDrive(dt) {
   };
   const speedBefore = playerCar.speed;
   const hit = stepVehicle(playerCar, input, dt, carColliders, driveObstacles());
-  if (hit) missions.vehicleHit(playerCar, speedBefore);
+  if (hit) {
+    missions.vehicleHit(playerCar, speedBefore);
+    // A hard hit on a traffic car, witnessed, is a crime.
+    for (const tc of traffic.cars) {
+      if (Math.hypot(tc.x - playerCar.x, tc.z - playerCar.z) < 5) {
+        police.reportCollision(playerCar.x, playerCar.z);
+        break;
+      }
+    }
+  }
   playerCar.headlights = presetName !== 'day';
 }
 
@@ -325,8 +411,10 @@ function simStep(dt) {
   if (mode === 'drive') stepDrive(dt);
   else stepPlayer(dt);
   crowd.update(dt);
-  traffic.update(dt, simTime, playerCar);
+  traffic.update(dt, simTime, playerCar, police.getObstacles());
   missions.update(dt);
+  police.update(dt);
+  radio.update(dt);
   simTime += dt;
 }
 
@@ -343,6 +431,9 @@ function driveInfo() {
     traffic: traffic.cars.map((c) => ({ x: c.x, z: c.z })),
     parked: drivableCars.filter((c) => c !== playerCar).map((c) => ({ x: c.x, z: c.z })),
     signals: traffic.signals.map((s) => ({ x: s.x, z: s.z, state: signalState(s, simTime) })),
+    police: police.getState(),
+    radio: radio.getState(),
+    garages: garages.list(),
   };
 }
 
@@ -354,24 +445,8 @@ resize();
 
 function renderFrame(time) {
   const preset = PRESETS[presetName];
-  // The dynamic mesh, rebuilt every frame: people, traffic, signals, and
-  // every drivable car (so a car the player drove away is drawn once, where
-  // it now is, with its headlights on if it is being driven at night).
-  dynamicBuilder.reset();
-  crowd.drawInto(dynamicBuilder);
-  if (shotMode && mode !== 'drive') {
-    // In shot mode Mara is visible: draw her standing where the shot put
-    // her, in a teal shirt so she reads as the protagonist, not a
-    // pedestrian. (In normal play she is the first-person camera and is
-    // never drawn; in drive mode the car is drawn instead.)
-    drawPersonAt(dynamicBuilder, player.x, player.z, player.yaw, [0.22, 0.56, 0.6], [0.72, 0.52, 0.38], 0);
-  }
-  traffic.drawInto(dynamicBuilder, simTime, presetName !== 'day');
-  for (const car of drivableCars) {
-    drawCar(dynamicBuilder, car.x, car.z, car.angle, car.color, car.headlights);
-  }
-  missions.drawInto(dynamicBuilder, time);
-  renderer.setDynamic(dynamicBuilder.toArrays());
+  // The camera first: the crowd, the traffic and the parked cars are drawn
+  // with distance-based geometry, so they need the camera position.
   let camera;
   if (shotMode) {
     // In shot mode the camera is a fixed cinematic pose, not the player's eyes.
@@ -396,6 +471,27 @@ function renderFrame(time) {
   } else {
     camera = { pos: [player.x, EYE_HEIGHT, player.z], yaw: player.yaw, pitch: player.pitch, fov: 70 };
   }
+  // The dynamic mesh, rebuilt every frame: people, traffic, signals, and
+  // every drivable car (so a car the player drove away is drawn once, where
+  // it now is, with its headlights on if it is being driven at night).
+  dynamicBuilder.reset();
+  crowd.drawInto(dynamicBuilder, camera.pos[0], camera.pos[2]);
+  if (shotMode && mode !== 'drive') {
+    // In shot mode Mara is visible: draw her standing where the shot put
+    // her, in a teal shirt so she reads as the protagonist, not a
+    // pedestrian. (In normal play she is the first-person camera and is
+    // never drawn; in drive mode the car is drawn instead.)
+    drawPersonAt(dynamicBuilder, player.x, player.z, player.yaw, [0.22, 0.56, 0.6], [0.72, 0.52, 0.38], 0);
+  }
+  traffic.drawInto(dynamicBuilder, simTime, presetName !== 'day', camera.pos[0], camera.pos[2]);
+  for (const car of drivableCars) {
+    const dCar = Math.hypot(car.x - camera.pos[0], car.z - camera.pos[2]);
+    drawCar(dynamicBuilder, car.x, car.z, car.angle, car.color, car.headlights, dCar < 400 ? 'full' : 'low');
+  }
+  missions.drawInto(dynamicBuilder, time);
+  police.drawInto(dynamicBuilder, time);
+  garages.drawInto(dynamicBuilder, time);
+  renderer.setDynamic(dynamicBuilder.toArrays());
   let lights;
   if (lightOverride !== null) {
     lights = lightOverride;
@@ -403,6 +499,9 @@ function renderFrame(time) {
     lights = [];
     if (mode === 'drive' && playerCar && presetName !== 'day') {
       lights.push(...headlightPositions(playerCar));
+    }
+    if (presetName !== 'day') {
+      lights.push(...police.getLights());
     }
     lights.push(...nearestLamps(camera.pos[0], camera.pos[2]).slice(0, 6 - lights.length));
   }
@@ -423,6 +522,33 @@ let shotCamera = null;
 function stageShot(name) {
   const shot = SHOTS[name] || SHOTS.day;
   setPreset(shot.preset);
+  if (shot.garage !== undefined) {
+    // A bought garage with a car in its bay: buy it, park the starter
+    // coupe, and stand the camera outside the open front looking in.
+    // Three-quarter view from the front-left, low: the parked car's red
+    // flank reads (a high front-on camera only saw its dark glass roof),
+    // and the teal owned-sign stays in frame on the right.
+    const g = garages.list()[shot.garage];
+    garages.debug.buy(shot.garage);
+    const c = Math.cos(g.angle);
+    const s = Math.sin(g.angle);
+    const at = (lx, ly, lz) => [g.x + lx * c + lz * s, ly, g.z - lx * s + lz * c];
+    // The starter coupe, not the first parked coupe: the parked cars come
+    // first in drivableCars with random colours, so a bare profile match
+    // parked a grey one here and the red coupe never showed.
+    const coupe = drivableCars.find((c) => c.profile === 'coupe' && c.x === 0 && c.z === 300);
+    if (coupe) {
+      garages.debug.park(shot.garage, coupe);
+      // Stage the car near the open front so the daylight reaches it — a
+      // car buried at the back of the bay sits in the roof's shadow.
+      const [cx, , cz] = at(0, 0, 4);
+      coupe.x = cx;
+      coupe.z = cz;
+    }
+    const [camX, camY, camZ] = at(-8, 2.5, 16);
+    const [tgtX, , tgtZ] = at(0, 1, 4);
+    shot.camera = { pos: [camX, camY, camZ], target: [tgtX, 1, tgtZ] };
+  }
   const { yaw, pitch } = lookAtYawPitch(shot.camera.pos, shot.camera.target);
   shotCamera = { pos: shot.camera.pos, yaw, pitch };
   shotMode = true;
@@ -467,9 +593,24 @@ function stageShot(name) {
     player.z = shot.mara[1];
     player.yaw = shot.maraYaw ?? 0;
   }
+  if (shot.police) {
+    // A pursuit in progress: raise the warrant so patrol cars, roadblocks
+    // and the helicopter form — the arrest meter stays frozen, so the
+    // staging never ends in an arrest mid-frame.
+    police.debug.setStars(shot.police.stars);
+    police.debug.suspendArrest(true);
+  }
   // Let the crowd and the traffic run a few seconds in so the frame has life in it.
   const advance = shot.advance ?? 8;
   for (let i = 0; i < advance / STEP; i += 1) simStep(STEP);
+  if (shot.police && playerCar) {
+    // After the pursuit has run, put the patrol cars where the camera
+    // looks: one closing in behind the player's car, one ahead of it.
+    const fx = Math.sin(playerCar.angle);
+    const fz = Math.cos(playerCar.angle);
+    police.debug.placePatrol(0, playerCar.x - fx * 14, playerCar.z - fz * 14, playerCar.angle);
+    police.debug.placePatrol(1, playerCar.x + fx * 18 + 6, playerCar.z + fz * 18, playerCar.angle);
+  }
   announce(`Palkon Auto. ${PRESETS[shot.preset].label}.`);
   function paint() {
     renderFrame(8);
@@ -530,9 +671,18 @@ window.addEventListener('keydown', (event) => {
   } else if (event.code === 'KeyM' && started && !shotMode) {
     toggleDossier();
   } else if (event.code === 'KeyQ' && started && !shotMode) {
-    missions.interact();
+    // Q collects or delivers for a mission; away from any mission step, it
+    // buys the garage Mara is standing by.
+    if (!missions.interact()) {
+      const bought = garages.tryBuy();
+      if (!bought.ok && bought.reason !== 'no garage nearby') announce(bought.reason);
+    }
   } else if (event.code === 'KeyX' && started && !shotMode) {
     missions.dropCargo();
+  } else if (event.code === 'KeyF' && started && !shotMode) {
+    police.shove();
+  } else if (event.code === 'KeyR' && started && !shotMode) {
+    radio.toggle();
   } else if (event.key === 'Escape' && dossierOpen) {
     toggleDossier();
   }
@@ -736,7 +886,18 @@ function runDriveTest() {
     const dx = tx - car.x;
     const dz = tz - car.z;
     const dist = Math.hypot(dx, dz);
-    const desired = Math.atan2(dx, dz);
+    // Right-hand lane, as in driveLoop: aim 5 m to the right of the direct
+    // line so the car passes parked cars and oncoming traffic instead of
+    // meeting them head-on. (Stage E: the coupe met the parked mission van
+    // at (480,300) dead-on and the straight unstick could not get around it.)
+    let desired;
+    if (dist > 0.01) {
+      const ax = tx + (-dz / dist) * 5;
+      const az = tz + (dx / dist) * 5;
+      desired = Math.atan2(ax - car.x, az - car.z);
+    } else {
+      desired = Math.atan2(dx, dz);
+    }
     let diff = desired - car.angle;
     while (diff > Math.PI) diff -= 2 * Math.PI;
     while (diff < -Math.PI) diff += 2 * Math.PI;
@@ -985,8 +1146,9 @@ function runMissionsTest() {
   // cruise is the straight-line speed: the van steers sluggishly, so the
   // test drives it at 16 on the long mission-4 legs (a human drives
   // faster still) and at 6 by default.
-  function driveLoop(tx, tz, { maxSteps = 60000, stopWhen = null, cruise = 6 } = {}) {
+  function driveLoop(tx, tz, { maxSteps = 60000, stopWhen = null, cruise = 6, lane = 0 } = {}) {
     let blockedTime = 0;
+    let stuckTime = 0;
     let n = 0;
     const trail = [];
     while (n < maxSteps) {
@@ -998,7 +1160,20 @@ function runMissionsTest() {
       const dist = Math.hypot(dx, dz);
       if (dist < 12) { keys.clear(); return 'arrived'; }
       if (n % 2000 === 0) trail.push(`${playerCar.x.toFixed(0)},${playerCar.z.toFixed(0)}@${playerCar.speed.toFixed(1)}`);
-      const desired = Math.atan2(dx, dz);
+      // Right-hand lane: aim `lane` metres to the right of the direct
+      // line, matching the traffic (which drives 5 m right of the
+      // centreline). Driving on the centreline meets oncoming traffic
+      // head-on, and this autopilot has no avoidance, so a stopped
+      // oncoming car deadlocks it — the van sat at (818,-362), then
+      // (962,-362), nose-to-nose with a westbound car for the whole leg.
+      let desired;
+      if (lane && dist > 0.01) {
+        const ax = tx + (-dz / dist) * lane;
+        const az = tz + (dx / dist) * lane;
+        desired = Math.atan2(ax - playerCar.x, az - playerCar.z);
+      } else {
+        desired = Math.atan2(dx, dz);
+      }
       let diff = desired - playerCar.angle;
       while (diff > Math.PI) diff -= 2 * Math.PI;
       while (diff < -Math.PI) diff += 2 * Math.PI;
@@ -1030,22 +1205,34 @@ function runMissionsTest() {
       }
       if (!step()) return 'timeout';
       if (playerCar.speed < 0.5 && dist > 10) {
-        blockedTime += STEP;
-        if (blockedTime > 2) {
-          keys.clear(); keys.add('KeyS');
-          for (let i = 0; i < 90; i += 1) { if (!step()) return 'timeout'; }
-          keys.clear();
-          for (let i = 0; i < 180; i += 1) { if (!step()) return 'timeout'; }
-          blockedTime = 0;
+        // Queued behind a traffic car at a red light is not a wedge: the
+        // light cycles and the queue clears, so wait it out — but not
+        // forever. A head-on meeting with an oncoming car on a two-way
+        // road is a real deadlock (each waits for the other), and a
+        // straight reverse cannot free a car wedged against a building:
+        // after 30 s stuck, reverse WITH steer, which rotates the car so
+        // the next forward drive takes a different line around the block.
+        stuckTime += STEP;
+        const queued = traffic.cars.some((c) => Math.hypot(c.x - playerCar.x, c.z - playerCar.z) < 20);
+        if (queued && stuckTime < 30) blockedTime = 0;
+        else {
+          blockedTime += STEP;
+          if (blockedTime > 2 || stuckTime >= 30) {
+            keys.clear(); keys.add('KeyS'); keys.add('KeyA');
+            for (let i = 0; i < 90; i += 1) { if (!step()) return 'timeout'; }
+            keys.clear();
+            for (let i = 0; i < 180; i += 1) { if (!step()) return 'timeout'; }
+            blockedTime = 0; stuckTime = 0;
+          }
         }
-      } else blockedTime = 0;
+      } else { blockedTime = 0; stuckTime = 0; }
     }
     keys.clear();
     error = `driveLoop trail: ${trail.slice(-8).join(' ')}`;
     return 'timeout';
   }
-  function driveTo(tx, tz, { timeout = 60000, cruise = 6 } = {}) {
-    const r = driveLoop(tx, tz, { maxSteps: timeout, cruise });
+  function driveTo(tx, tz, { timeout = 60000, cruise = 6, lane = 0 } = {}) {
+    const r = driveLoop(tx, tz, { maxSteps: timeout, cruise, lane });
     if (r !== 'arrived') {
       error = `driveTo (${tx},${tz}) ${r} at (${playerCar ? `${playerCar.x.toFixed(0)},${playerCar.z.toFixed(0)}` : 'no car'}) | ${error ?? ''}`;
       return false;
@@ -1183,13 +1370,13 @@ function runMissionsTest() {
   if (!walkRoute([[0, 300], [480, 300]])) { finish(); return; }
   check(enterCar(), 'enter the courier van');
   check(playerCar === missionVan, 'in the van, not a starter car');
-  if (!driveTo(480, -360, { cruise: 16 })) { finish(); return; }
-  if (!driveTo(1200, -360, { cruise: 16 })) { finish(); return; }
+  if (!driveTo(480, -360, { cruise: 16, lane: 5 })) { finish(); return; }
+  if (!driveTo(1200, -360, { cruise: 16, lane: 5 })) { finish(); return; }
   // Drive at the edge, past it — the van must be doing over 12 m/s when
   // it hits, or the collision does no damage.
   const vanHit = driveLoop(1200, -1800, {
     maxSteps: 30000,
-    cruise: 16,
+    cruise: 16, lane: 5,
     stopWhen: () => missions.state.active && missions.state.active.vanIntegrity < 100,
   });
   check(vanHit === 'stopped', 'van took a hit at the city edge');
@@ -1224,7 +1411,7 @@ function runMissionsTest() {
   const m4Start = totalSteps;
   if (!walkRoute([[0, 300], [480, 300]])) { finish(); return; }
   check(enterCar(), 'enter the courier van again');
-  if (!driveRoute([[480, -360], [1200, -360], [1200, -1080]], { cruise: 10 })) { finish(); return; }
+  if (!driveRoute([[480, -360], [1200, -360], [1200, -1080]], { cruise: 10, lane: 5 })) { finish(); return; }
   exitCar();
   if (!walkTo(1200, -1080)) { finish(); return; }
   check(missions.interact(), 'collect the payment chain (Q)');
@@ -1380,8 +1567,474 @@ function runMissionsTest() {
   finish();
 }
 
+/** ?test=police — scripted play-throughs of Stage E: a witnessed red light
+ * raises the warrant, collisions raise it to 3 (roadblocks) and the guard's
+ * shove to 5 (helicopter), a garage is bought and a parked car survives a
+ * reload, an arrest recovers Mara at the park with a penalty and a failed
+ * mission, the radio toggles while driving, and the streets are denser
+ * inside the render budget while Glasspoint reads differently in each
+ * preset. Runs synchronously (the headless shell throttles rAF), one
+ * render at the end of each phase. */
+function runPoliceTest() {
+  setPreset('day');
+  started = true;
+  hud.hideTitle();
+  const statusEl = document.getElementById('status');
+  const results = {};
+  const lines = [];
+  let error = null;
+  let failed = false;
+  let totalSteps = 0;
+
+  function check(cond, label) {
+    if (cond) lines.push(`ok ${label}`);
+    else { lines.push(`FAIL ${label}`); failed = true; }
+    return cond;
+  }
+  function step() {
+    totalSteps += 1;
+    if (totalSteps > 600000) { error = 'step guard exceeded'; return false; }
+    simStep(STEP);
+    return true;
+  }
+  function stepN(n) {
+    for (let i = 0; i < n; i += 1) { if (!step()) return false; }
+    return true;
+  }
+  function spawn() {
+    if (mode === 'drive') exitCar();
+    player.x = 0; player.z = 320; player.yaw = 0;
+    keys.clear();
+  }
+  // Walk toward (tx,tz): face it, hold W (Shift to run). Stops early when
+  // stopWhen() is true (the guard's grapple locks Mara in place).
+  function walkTo(tx, tz, { run = true, timeout = 60000, stopDist = 4, stopWhen = null } = {}) {
+    let side = 0;
+    let lx = player.x;
+    let lz = player.z;
+    let since = 0;
+    let healIn = 0;
+    while (true) {
+      if (stopWhen && stopWhen()) break;
+      const dx = tx - player.x;
+      const dz = tz - player.z;
+      if (Math.hypot(dx, dz) < stopDist) break;
+      let yaw = Math.atan2(dx, -dz);
+      if (side > 0) { yaw += Math.PI / 2; side -= 1; }
+      player.yaw = yaw;
+      keys.clear();
+      keys.add('KeyW');
+      if (run) keys.add('ShiftLeft');
+      if (!step()) return false;
+      healIn += 1;
+      if (healIn >= 120) { missions.debug.setHealth(100); healIn = 0; }
+      since += 1;
+      if (since >= 120) {
+        const moved = Math.hypot(player.x - lx, player.z - lz);
+        if (moved < 0.5) side = 60;
+        lx = player.x; lz = player.z; since = 0;
+      }
+      timeout -= 1;
+      if (timeout <= 0) {
+        error = `walkTo (${tx},${tz}) timed out at (${player.x.toFixed(0)},${player.z.toFixed(0)})`;
+        return false;
+      }
+    }
+    keys.clear();
+    return true;
+  }
+  // Drive toward (tx,tz) with the Stage B autopilot; stops early when
+  // stopWhen() is true. Returns 'arrived', 'stopped' or 'timeout'.
+  function driveLoop(tx, tz, { maxSteps = 60000, stopWhen = null, cruise = 6, trace = null, lane = 0 } = {}) {
+    let blockedTime = 0;
+    let stuckTime = 0;
+    let n = 0;
+    while (n < maxSteps) {
+      n += 1;
+      if (!playerCar) { error = 'driveLoop: not in a car'; return 'timeout'; }
+      if (stopWhen && stopWhen()) return 'stopped';
+      const dx = tx - playerCar.x;
+      const dz = tz - playerCar.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 12) { keys.clear(); return 'arrived'; }
+      // Right-hand lane: aim `lane` metres to the right of the direct
+      // line, matching the traffic (which drives 5 m right of the
+      // centreline). Driving on the centreline meets oncoming traffic
+      // head-on, and this autopilot has no avoidance, so a stopped
+      // oncoming car deadlocks it — the van sat at (818,-362), then
+      // (962,-362), nose-to-nose with a westbound car for the whole leg.
+      let desired;
+      if (lane && dist > 0.01) {
+        const ax = tx + (-dz / dist) * lane;
+        const az = tz + (dx / dist) * lane;
+        desired = Math.atan2(ax - playerCar.x, az - playerCar.z);
+      } else {
+        desired = Math.atan2(dx, dz);
+      }
+      let diff = desired - playerCar.angle;
+      while (diff > Math.PI) diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      const steer = Math.max(-1, Math.min(1, diff * 3));
+      keys.delete('KeyA'); keys.delete('KeyD');
+      if (steer > 0.05) keys.add('KeyA');
+      else if (steer < -0.05) keys.add('KeyD');
+      keys.delete('KeyW'); keys.delete('KeyS');
+      if (Math.abs(diff) > 0.6) {
+        if (playerCar.speed > 2) keys.add('KeyS');
+        else if (playerCar.speed < 1) keys.add('KeyW');
+      } else if (dist < 40) {
+        if (playerCar.speed > 2) keys.add('KeyS');
+        else if (playerCar.speed < 2) keys.add('KeyW');
+      } else if (playerCar.speed < cruise) keys.add('KeyW');
+      if (!step()) return 'timeout';
+      if (trace) trace(n);
+      if (playerCar.speed < 0.5 && dist > 10) {
+        // Queued behind a traffic car at a red light is not a wedge: the
+        // light cycles and the queue clears, so wait it out — but not
+        // forever. A head-on meeting with an oncoming car on a two-way
+        // road is a real deadlock (each waits for the other), and a
+        // straight reverse cannot free a car wedged against a building:
+        // after 30 s stuck, reverse WITH steer, which rotates the car so
+        // the next forward drive takes a different line around the block.
+        stuckTime += STEP;
+        const queued = traffic.cars.some((c) => Math.hypot(c.x - playerCar.x, c.z - playerCar.z) < 20);
+        if (queued && stuckTime < 30) blockedTime = 0;
+        else {
+          blockedTime += STEP;
+          if (blockedTime > 2 || stuckTime >= 30) {
+            keys.clear(); keys.add('KeyS'); keys.add('KeyA');
+            for (let i = 0; i < 90; i += 1) { if (!step()) return 'timeout'; }
+            keys.clear();
+            for (let i = 0; i < 180; i += 1) { if (!step()) return 'timeout'; }
+            blockedTime = 0; stuckTime = 0;
+          }
+        }
+      } else { blockedTime = 0; stuckTime = 0; }
+    }
+    keys.clear();
+    return 'timeout';
+  }
+  function patchRGB(px) {
+    const n = px.length / 4;
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < n; i += 1) { r += px[i * 4]; g += px[i * 4 + 1]; b += px[i * 4 + 2]; }
+    return { r: +(r / n).toFixed(1), g: +(g / n).toFixed(1), b: +(b / n).toFixed(1), mean: +(((r + g + b) / 3 / n).toFixed(1)) };
+  }
+  // The audio clock runs on real time, not simulation time: a short
+  // busy-wait lets a gain ramp actually move before it is measured.
+  function waitReal(ms) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) { /* the audio clock runs */ }
+  }
+  // Measure a 16 px patch on a world point, from a fixed camera, in a preset.
+  // Forces on-foot mode: in drive mode renderFrame uses the chase camera,
+  // not the player's eyes, so the patch would sample the wrong view.
+  function measurePatch(preset, camPos, camTarget, point) {
+    if (mode === 'drive') exitCar();
+    setPreset(preset);
+    player.x = camPos[0];
+    player.z = camPos[2];
+    const look = lookAtYawPitch(camPos, camTarget);
+    player.yaw = look.yaw;
+    player.pitch = look.pitch;
+    renderFrame(8);
+    const s = projectToScreen(camPos, look.yaw, look.pitch, point);
+    if (!s) return null;
+    return patchRGB(readPatch(s.x, s.y, 16));
+  }
+  function finish() {
+    keys.clear();
+    const pass = !error && !failed;
+    lines.push(`results ${JSON.stringify(results)}`);
+    const summary = `POLICE-TEST ${pass ? 'PASS' : 'FAIL'}${error ? ` | error: ${error}` : ''} | steps ${totalSteps} | ${lines.join(' | ')}`;
+    statusEl.textContent = summary;
+    document.title = `TEST-DONE ${pass ? 'PASS' : 'FAIL'}`;
+    window.__testResult = { test: 'police', pass, error, results, summary };
+    window.__shotReady = true;
+    renderFrame(totalSteps * STEP);
+  }
+
+  missions.debug.resetSave();
+  police.debug.setStars(0);
+
+  // Phase 0: denser streets inside the render budget, with distance LOD.
+  // One second of simulation first, so the crowd is actually standing on
+  // its loops (at creation every pedestrian is still at 0,0).
+  if (!stepN(60)) { finish(); return; }
+  results.density = { crowd: crowd.count, traffic: traffic.cars.length };
+  check(crowd.count === 110, '110 pedestrians on the streets (Stage B: 60)');
+  check(traffic.cars.length === 32, '32 traffic cars (Stage B: 20)');
+  const nearBuilder = new MeshBuilder();
+  crowd.drawInto(nearBuilder, 0, 600);
+  const farBuilder = new MeshBuilder();
+  crowd.drawInto(farBuilder, 1500, 1500);
+  results.lod = { nearVerts: nearBuilder.vertexCount, farVerts: farBuilder.vertexCount };
+  check(farBuilder.vertexCount < nearBuilder.vertexCount, `far crowd uses fewer polygons (${farBuilder.vertexCount} < ${nearBuilder.vertexCount} verts)`);
+  player.x = 0; player.z = 600; player.yaw = 0; player.pitch = 0;
+  renderFrame(8);
+  results.budget = { dynamicVerts: dynamicBuilder.vertexCount };
+  check(dynamicBuilder.vertexCount < 40000, `dynamic mesh ${dynamicBuilder.vertexCount} verts < 40000 budget`);
+
+  // Phase 1: a witnessed red light raises the warrant to 1 star.
+  const coupe = drivableCars.find((c) => c.profile === 'coupe' && c.x === 0 && c.z === 300);
+  check(!!coupe, 'starter coupe found');
+  // 40 m west of the signal: close enough to cross while the light is
+  // still red (the red phase lasts 8 s; the drive from 160 m out took
+  // longer than that, so the crossing happened on green).
+  coupe.x = -40; coupe.z = -360; coupe.angle = Math.PI / 2; coupe.speed = 0;
+  player.x = -38; player.z = -356; player.yaw = Math.PI / 2;
+  check(enterCar(), 'enter the coupe on the z=-360 road');
+  // A witness: put a loop-0 traffic car 40 m before signal 0, so it is
+  // stopped at the red right where Mara crosses it.
+  const sig0 = traffic.signals[0];
+  const loop0 = traffic.loops[0];
+  let waited = 0;
+  while (signalState(sig0, simTime) !== 'red' && waited < 1500) {
+    if (!step()) break;
+    waited += 1;
+  }
+  check(signalState(sig0, simTime) === 'red', 'signal 0 is red before the crossing');
+  // A witness: put a loop-0 traffic car 40 m before signal 0 NOW that the
+  // light is red. Placed before the wait it drove through on green and was
+  // long past the signal by the crossing (d 572, x 92) — so nobody
+  // witnessed the crime.
+  const witness = traffic.cars.find((c) => c.loop === 0);
+  witness.d = (((sig0.arc - 40) % loop0.length) + loop0.length) % loop0.length;
+  const witnessAtSet = { x: +witness.x.toFixed(1), z: +witness.z.toFixed(1), d: +witness.d.toFixed(1), waited };
+  const samples = [];
+  const cross = driveLoop(200, -360, {
+    cruise: 10, maxSteps: 3000,
+    stopWhen: () => police.getState().stars >= 1,
+    trace: () => {
+      if (playerCar.x > -20 && playerCar.x < 30 && samples.length < 12) {
+        samples.push({
+          x: +playerCar.x.toFixed(1), v: +playerCar.speed.toFixed(1),
+          sig: signalState(sig0, simTime), stars: police.getState().stars,
+          wit: +Math.min(...traffic.cars.map((c) => Math.hypot(c.x - playerCar.x, c.z - playerCar.z))).toFixed(1),
+        });
+      }
+    },
+  });
+  check(cross === 'stopped', 'drove through the red light');
+  check(police.getState().stars === 1, 'warrant 1 star after the witnessed red light');
+  if (!stepN(120)) { finish(); return; }
+  results.redlight = { cross, carX: +playerCar.x.toFixed(1), carZ: +playerCar.z.toFixed(1), error, stars: police.getState().stars, patrol: police.getState().patrol.length, witnessAtSet, wit: samples.length ? samples[0].wit : null };
+  check(police.getState().patrol.length === 1, 'one patrol car responds at 1 star');
+
+  // Phase 2: witnessed collisions raise the warrant to 3 stars. Each ram
+  // lines the player car up on the traffic car's own loop, 30 m behind it,
+  // then chases in short bursts that re-aim at the moving car.
+  function ramOnce(before) {
+    let tc = null;
+    let bestD = Infinity;
+    for (const c of traffic.cars) {
+      const d = Math.hypot(c.x - playerCar.x, c.z - playerCar.z);
+      if (d < bestD) { bestD = d; tc = c; }
+    }
+    if (!tc) return false;
+    const loop = traffic.loops[tc.loop];
+    const spot = loop.posAt(tc.d - 30);
+    playerCar.x = spot.x;
+    playerCar.z = spot.z;
+    playerCar.angle = spot.angle;
+    playerCar.speed = 0;
+    let n = 0;
+    while (n < 3000) {
+      if (police.getState().stars > before) return true;
+      const fx = Math.sin(tc.angle);
+      const fz = Math.cos(tc.angle);
+      const r = driveLoop(tc.x + fx * 60, tc.z + fz * 60, {
+        cruise: 16, maxSteps: 120,
+        stopWhen: () => police.getState().stars > before,
+      });
+      if (r === 'stopped') return true;
+      n += 120;
+    }
+    return false;
+  }
+  let rams = 0;
+  for (let attempt = 0; attempt < 9 && police.getState().stars < 3; attempt += 1) {
+    const before = police.getState().stars;
+    if (ramOnce(before)) rams += 1;
+  }
+  check(police.getState().stars === 3, `warrant 3 stars after witnessed collisions (${rams} rams)`);
+  if (!stepN(120)) { finish(); return; }
+  results.ram = { stars: police.getState().stars, rams, roadblocks: police.getState().roadblocks.length };
+  check(police.getState().roadblocks.length === 2, 'two roadblocks form at 3 stars');
+  check(police.getState().patrol.length === 3, 'three patrol cars at 3 stars');
+
+  // Phase 3: the Glasspoint guard grapples Mara; the shove breaks it and
+  // feeds the warrant to 5 stars, and the helicopter joins.
+  police.debug.suspendArrest(true);
+  spawn();
+  player.x = 1200; player.z = -1052; player.yaw = Math.PI;
+  if (!walkTo(1200, -1071, { stopDist: 2, stopWhen: () => police.isGrappled() })) { finish(); return; }
+  check(police.isGrappled(), 'the guard grappled Mara');
+  police.debug.suspendArrest(false);
+  if (!stepN(30)) { finish(); return; }
+  results.grapple = { meter: +police.arrestMeter().toFixed(2) };
+  check(police.arrestMeter() > 0, `arrest meter fills while grappled (${police.arrestMeter().toFixed(2)})`);
+  // Let the crime cooldown clear so the shove's +2 stars land.
+  if (police.state.crimeCooldown > 0) {
+    police.debug.suspendArrest(true);
+    if (!stepN(Math.ceil(police.state.crimeCooldown * 60) + 30)) { finish(); return; }
+    police.debug.suspendArrest(false);
+  }
+  const starsBeforeShove = police.getState().stars;
+  const guardBefore = { ...police.getState().guard };
+  check(police.shove(), 'Mara shoved the guard off');
+  check(!police.isGrappled(), 'the grapple is broken');
+  const guardAfter = police.getState().guard;
+  const pushed = Math.hypot(guardAfter.x - player.x, guardAfter.z - player.z);
+  results.shove = {
+    starsBefore: starsBeforeShove, starsAfter: police.getState().stars,
+    guardPushed: +pushed.toFixed(1), heli: !!police.getState().heli,
+  };
+  check(pushed >= 6, `the guard was pushed back (${pushed.toFixed(1)} m)`);
+  check(police.getState().stars === 5, `warrant 5 stars after the shove (${starsBeforeShove} + 2)`);
+  // The helicopter spawns on the next police update after the stars rise.
+  if (!stepN(60)) { finish(); return; }
+  results.shove.heli = !!police.getState().heli;
+  check(police.getState().heli !== null, 'the helicopter joins at 4+ stars');
+  check(police.getState().patrol.length === 3, 'three patrol cars at 5 stars');
+  check(police.getState().roadblocks.length === 2, 'roadblocks hold at 5 stars');
+
+  // Phase 4: buy a garage with mission earnings, park a car in it, reload
+  // the save, and confirm the garage and the car persist.
+  missions.debug.setCash(4450);
+  const g0 = garages.list()[0];
+  player.x = g0.x; player.z = g0.z; player.yaw = 0;
+  const bought = garages.tryBuy();
+  check(bought.ok, `bought the ${g0.name} for $${g0.price}`);
+  check(missions.state.cash === 4050, 'cash $4050 after the $400 garage');
+  const parkedCar = drivableCars.find((c) => c.profile === 'coupe');
+  parkedCar.x = g0.x; parkedCar.z = g0.z; parkedCar.angle = g0.angle; parkedCar.speed = 0;
+  player.x = g0.x + 3; player.z = g0.z + 3;
+  check(enterCar(), 'enter the car in the garage bay');
+  exitCar();
+  check(garages.getState().parked[0] && garages.getState().parked[0].carId === parkedCar.id, 'the car is parked in the garage');
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('palkon-auto-save-v1')); } catch { saved = null; }
+  check(saved && saved.cash === 4050, 'save holds cash $4050');
+  check(saved && saved.garages && saved.garages.owned.includes(0), 'save holds the owned garage');
+  check(saved && saved.garages && saved.garages.parked['0'] && saved.garages.parked['0'].carId === parkedCar.id, 'save holds the parked car');
+  // A fresh load: the car is back at its city spot, then the garage puts it
+  // back in its bay.
+  parkedCar.x = 0; parkedCar.z = 300; parkedCar.angle = 0; parkedCar.garaged = null;
+  const g2 = createGarages({
+    player, getMode: () => mode, getPlayerCar: () => playerCar,
+    collide: (x, z) => collide(x, z), city, missions, onEvent: () => {},
+  });
+  const restored = g2.restore(drivableCars);
+  results.garage = {
+    name: g0.name, price: g0.price, cashAfter: missions.state.cash,
+    restored, carAtBay: Math.hypot(parkedCar.x - g0.x, parkedCar.z - g0.z) < 1,
+  };
+  check(restored === 1, 'one car restored from the save');
+  check(Math.hypot(parkedCar.x - g0.x, parkedCar.z - g0.z) < 1, 'the restored car sits in its bay');
+  check(g2.getState().owned.includes(0), 'the reloaded garages still own garage 0');
+
+  // Phase 5: arrested — recovery at the civic park, a cash penalty, and
+  // the active mission fails.
+  check(missions.start(1), 'start mission 1 before the arrest');
+  spawn();
+  player.x = 0; player.z = 320; player.yaw = 0;
+  police.debug.placePatrol(0, 0, 332, Math.PI);
+  let arrestedAt = -1;
+  for (let i = 0; i < 1200; i += 1) {
+    if (!step()) break;
+    if (player.x === -1000 && player.z === -1010) { arrestedAt = i; break; }
+  }
+  results.arrest = {
+    steps: arrestedAt, cash: missions.state.cash,
+    atPark: player.x === -1000 && player.z === -1010,
+    missionActive: !!missions.state.active, stars: police.getState().stars,
+  };
+  check(arrestedAt >= 0, `arrested after ${arrestedAt} steps (2.5 s meter)`);
+  check(player.x === -1000 && player.z === -1010, 'Mara recovered at the civic park');
+  check(missions.state.cash === 3950, 'cash $3950 after the $100 arrest penalty');
+  check(!missions.state.active, 'the active mission failed on arrest');
+  check(police.getState().stars === 0, 'the warrant clears after the arrest');
+  check(missions.state.health === 100, 'health restored to 100');
+
+  // Phase 6: the radio toggles on and off while driving.
+  spawn();
+  player.x = 242; player.z = 336; player.yaw = 0;
+  check(enterCar(), 'enter the sedan for the radio drive');
+  check(radio.toggle(), 'radio on');
+  // The gain ramp runs on the real-time audio clock, so let real time
+  // pass before measuring it (the synchronous drive is only ~70 ms of
+  // wall time, which is not enough for the 0.3 s ramp).
+  waitReal(600);
+  const radioOn = radio.getState();
+  results.radio = { on: radioOn.on, audio: radioOn.audio, ctxState: radioOn.ctxState, headline0: radioOn.headlineIndex };
+  check(radioOn.on, 'radio reports on');
+  check(radioOn.headline.length > 0, 'a headline is showing');
+  const radioDrive = driveLoop(240, 800, {
+    cruise: 10, maxSteps: 2000,
+    stopWhen: () => radio.getState().headlineIndex >= 1,
+  });
+  const radioMid = radio.getState();
+  if (radioMid.ctxState === 'running') {
+    check(radioDrive === 'stopped', 'the headline advanced while driving (20 s bulletin)');
+    check(radioMid.headlineIndex >= 1, 'headline 2 is showing');
+  } else {
+    // Headless audio never started: verify the rotation logic directly.
+    lines.push(`note radio audio ${radioMid.ctxState} in headless, rotation via debug`);
+    radio.debug.nextHeadline();
+    check(radio.getState().headlineIndex >= 1, 'headline rotation works (debug step)');
+  }
+  // The drive took real wall-clock time too, so the gain ramp has settled.
+  const radioAudible = radio.getState();
+  if (radioAudible.audio && radioAudible.ctxState === 'running') {
+    check(radioAudible.gain > 0.3, `radio gain audible (${radioAudible.gain.toFixed(2)})`);
+  }
+  check(radio.toggle() === false, 'radio off');
+  waitReal(600);
+  const radioOff = radio.getState();
+  check(!radioOff.on, 'radio reports off');
+  if (radioOff.audio && radioOff.ctxState === 'running') {
+    check(radioOff.gain < 0.05, `radio gain silent (${radioOff.gain.toFixed(3)})`);
+  }
+
+  // Phase 7: Glasspoint reads differently in each preset — the tallest
+  // tower's south face and its lit office strip, measured from the road.
+  const tower = city.towers[0];
+  const camPos = [tower.x, 1.7, tower.z + tower.d / 2 + 70];
+  const camTarget = [tower.x, tower.h * 0.45, tower.z + tower.d / 2];
+  const facePoint = [tower.x + 8, tower.h * 0.5, tower.z + tower.d / 2 + 0.05];
+  const stripPoint = [tower.x, tower.h * 0.55, tower.z + tower.d / 2 + 0.35];
+  const dayFace = measurePatch('day', camPos, camTarget, facePoint);
+  const dayStrip = measurePatch('day', camPos, camTarget, stripPoint);
+  const sunsetFace = measurePatch('sunset', camPos, camTarget, facePoint);
+  const sunsetStrip = measurePatch('sunset', camPos, camTarget, stripPoint);
+  const nightFace = measurePatch('night', camPos, camTarget, facePoint);
+  const nightStrip = measurePatch('night', camPos, camTarget, stripPoint);
+  results.glasspoint = {
+    tower: { x: +tower.x.toFixed(0), z: +tower.z.toFixed(0), h: +tower.h.toFixed(0) },
+    dayFace, dayStrip, sunsetFace, sunsetStrip, nightFace, nightStrip,
+  };
+  check(dayFace && nightFace && dayStrip && nightStrip, 'all six Glasspoint patches on screen');
+  if (dayFace && nightFace) {
+    check(dayFace.b - dayFace.r > 10, `day glass reads blue (B-R ${dayFace.b - dayFace.r})`);
+    // The night face is still blue-dominant overall (moonlit glass), but
+    // the lit office panes warm it relative to midday — R/B rises.
+    check(nightFace.r / nightFace.b > dayFace.r / dayFace.b + 0.05, `night glass warmed by lit panes (R/B ${+(nightFace.r / nightFace.b).toFixed(2)} vs ${+(dayFace.r / dayFace.b).toFixed(2)} day)`);
+    check(sunsetFace.r - sunsetFace.b > 10, `sunset glass reads warm (R-B ${sunsetFace.r - sunsetFace.b})`);
+  }
+  if (dayStrip && nightStrip) {
+    check(nightStrip.mean > dayStrip.mean + 20, `lit strip glows at night (${nightStrip.mean} vs ${dayStrip.mean} day)`);
+  }
+  if (dayStrip && sunsetStrip) {
+    check(sunsetStrip.mean > dayStrip.mean + 5, `lit strip half-glows at sunset (${sunsetStrip.mean} vs ${dayStrip.mean} day)`);
+  }
+
+  finish();
+}
+
 if (testName === 'drive') runDriveTest();
 else if (testName === 'missions') runMissionsTest();
 else if (testName === 'headlights') runHeadlightTest();
+else if (testName === 'police') runPoliceTest();
 else if (shotName) stageShot(shotName);
 else runGame();

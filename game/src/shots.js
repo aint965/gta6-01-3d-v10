@@ -107,6 +107,37 @@ export const SHOTS = {
     maraYaw: 0,
     advance: 8,
   },
+  // Stage E: verification shots only — never added to screenshots/ (the
+  // dossier caps the game at four). A police pursuit at 3 stars: Mara in
+  // the coupe on the South Market road, patrol cars closing in, a
+  // roadblock forming ahead.
+  policePursuit: {
+    preset: 'day',
+    // The camera sits 10 m behind patrol 0 so the closing patrol car is
+    // fully in frame at the bottom (at 4 m it was clipped by the corner).
+    camera: { pos: [248, 6, 324], target: [234, 2, 240] },
+    // Facing north, away from the camera: the coupe's rear is to the
+    // camera, patrol 0 closes in between camera and coupe, patrol 1 waits
+    // ahead up the road. (Facing south put patrol 1 behind the camera and
+    // patrol 0 on the far side of the coupe, half hidden.)
+    car: { profile: 'coupe', x: 240, z: 300, angle: Math.PI, color: [0.85, 0.35, 0.28] },
+    police: { stars: 3 },
+    advance: 8,
+  },
+  // Stage E: verification shot only. The South Market garage, bought, with
+  // the starter coupe parked in its bay.
+  garage: {
+    preset: 'day',
+    garage: 0,
+    advance: 2,
+  },
+  // Stage E: verification shot only. Glasspoint at night: the tallest
+  // tower's lit office panes and crown against the dark facade.
+  glasspoint: {
+    preset: 'night',
+    camera: { pos: [1595, 8, -1075], target: [1595, 60, -1150] },
+    advance: 8,
+  },
 };
 
 /** Camera yaw/pitch (the game's convention) for a camera looking at a target. */

@@ -78,14 +78,17 @@ function drawPerson(b, p) {
   drawPersonAt(b, p.x, p.z, p.angle, p.shirt, p.skin, p.phase);
 }
 
-export function drawCar(b, x, z, angle, color, headlights = false) {
+export function drawCar(b, x, z, angle, color, headlights = false, detail = 'full') {
   // Body, cabin and wheels: the paint catches the sun, the glass catches it more.
+  // Paint gloss 0.6, not 0.9: at a grazing angle a 0.9-gloss flank mirrors
+  // the sky and the red washes out to grey; the glass cabin stays 1.0.
   rotBox(b, x, 0.55, z, 2.0, 0.85, 4.6, angle, {
-    tile: TILE.concrete, color, gloss: 0.9,
+    tile: TILE.concrete, color, gloss: 0.6,
   });
   rotBox(b, x, 1.28, z - 0.2, 1.8, 0.65, 2.4, angle, {
     tile: TILE.glassTeal, color: [0.14, 0.18, 0.22], gloss: 1,
   });
+  if (detail === 'low') return; // far away: body and cabin only, no wheels or lenses
   const c = Math.cos(angle);
   const s = Math.sin(angle);
   for (const [lx, lz] of [[-0.85, 1.5], [0.85, 1.5], [-0.85, -1.5], [0.85, -1.5]]) {
@@ -138,7 +141,9 @@ function loopLength(loop) {
 export function createCrowd(city, seed) {
   const rng = createRandom(seed ^ 0x5f3759df);
   const people = [];
-  for (let i = 0; i < 60; i += 1) {
+  // Stage E: 110 pedestrians, up from 60 — the streets are busier, and the
+  // draw below spends fewer polygons the further away a person is.
+  for (let i = 0; i < 110; i += 1) {
     const loop = rng.pick(city.walkLoops);
     people.push({
       loop,
@@ -152,6 +157,7 @@ export function createCrowd(city, seed) {
     });
   }
   return {
+    count: people.length,
     update(dt) {
       for (const p of people) {
         p.distance = (p.distance + p.speed * dt) % p.length;
@@ -164,9 +170,28 @@ export function createCrowd(city, seed) {
     },
     /** Draw the pedestrians into the shared dynamic mesh. Parked and
      * traffic cars are drawn by the driving modules, not here, so a car the
-     * player drove away is never drawn twice. */
-    drawInto(builder) {
-      for (const p of people) drawPerson(builder, p);
+     * player drove away is never drawn twice. Distance-based geometry: a
+     * person close to the camera gets legs, torso and head; past 150 m the
+     * legs go, past 400 m only the torso is drawn — the render budget holds
+     * while the streets stay busy. */
+    drawInto(builder, camX = 0, camZ = 0) {
+      for (const p of people) {
+        const d = Math.hypot(p.x - camX, p.z - camZ);
+        if (d < 150) {
+          drawPerson(builder, p);
+        } else if (d < 400) {
+          rotBox(builder, p.x, 1.12, p.z, 0.56, 0.72, 0.34, p.angle, {
+            tile: TILE.limestonePlain, color: p.shirt, gloss: 0.05,
+          });
+          rotBox(builder, p.x, 1.66, p.z, 0.3, 0.3, 0.3, p.angle, {
+            tile: TILE.limestonePlain, color: p.skin, gloss: 0.05,
+          });
+        } else {
+          rotBox(builder, p.x, 1.12, p.z, 0.56, 0.72, 0.34, p.angle, {
+            tile: TILE.limestonePlain, color: p.shirt, gloss: 0.05,
+          });
+        }
+      }
     },
   };
 }

@@ -201,6 +201,8 @@ export function createMissions(world) {
         completed: state.completed,
         evidence: state.evidence,
         unlocked: state.unlocked,
+        // The garages ride in the same save, alongside evidence and cash.
+        garages: world.getGarageSave ? world.getGarageSave() : undefined,
       }));
     } catch {
       // Storage full or unavailable: the session keeps playing unsaved.
@@ -266,14 +268,14 @@ export function createMissions(world) {
     world.onEvent(`MISSION FAILED \u2014 ${def ? `${def.title}: ` : ''}${reason}`);
   }
 
-  function recoverToPark() {
+  function recoverToPark(message) {
     state.cash = Math.max(0, state.cash - CASH_PENALTY);
     state.health = HEALTH_MAX;
     world.player.x = RECOVERY.x;
     world.player.z = RECOVERY.z;
     world.player.yaw = 0;
     save();
-    world.onEvent(`Mara was hurt \u2014 recovered at the civic park \u00b7 -$${CASH_PENALTY}`);
+    world.onEvent(message ?? `Mara was hurt \u2014 recovered at the civic park \u00b7 -$${CASH_PENALTY}`);
   }
 
   function damagePlayer(amount) {
@@ -294,6 +296,18 @@ export function createMissions(world) {
   return {
     state,
     defs: MISSION_DEFS,
+
+    /** Write the save now (the garages call this after a buy or a park). */
+    save() {
+      save();
+    },
+
+    /** Arrested: the active mission fails, and Mara recovers at the civic
+     * park with the same $100 penalty as a zero-health recovery. */
+    arrest() {
+      if (state.active) failMission('Arrested by the Solmar police');
+      recoverToPark(`Arrested \u2014 recovered at the civic park \u00b7 -$${CASH_PENALTY}`);
+    },
 
     start(id, opts = {}) {
       const def = MISSION_DEFS.find((m) => m.id === id);
@@ -624,6 +638,10 @@ export function createMissions(world) {
       },
       setTimeLeft(seconds) {
         if (state.active) state.active.timeLeft = seconds;
+      },
+      setCash(n) {
+        state.cash = Math.max(0, n | 0);
+        save();
       },
       setHealth(n) {
         state.health = n;

@@ -121,6 +121,8 @@ const CAR_COLORS = [
 
 const CRUISE = { compact: 12, sedan: 13, van: 10, coupe: 14 };
 
+const CARS_PER_LOOP = [6, 6, 7, 6, 7]; // 32 cars, denser than Stage B's 20
+
 export function createTraffic(city, seed) {
   const rng = createRandom((seed ^ 0x51ab) >>> 0);
   const loops = LOOP_POINTS.map((pts) => makeLoop(pts));
@@ -131,11 +133,11 @@ export function createTraffic(city, seed) {
   const cars = [];
   for (let li = 0; li < loops.length; li += 1) {
     const loop = loops[li];
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < CARS_PER_LOOP[li]; i += 1) {
       const profile = PROFILE_NAMES[(li + i) % PROFILE_NAMES.length];
       cars.push({
         loop: li,
-        d: (i / 4) * loop.length + rng.range(0, 40),
+        d: (i / CARS_PER_LOOP[li]) * loop.length + rng.range(0, 40),
         speed: 0,
         cruise: CRUISE[profile],
         profile,
@@ -157,8 +159,10 @@ export function createTraffic(city, seed) {
     loops,
     signals,
     cars,
-    /** Advance the traffic by dt at simulation time t. */
-    update(dt, t, playerCar) {
+    /** Advance the traffic by dt at simulation time t. `extraObstacles`
+     * are police roadblocks and patrol cars across a lane: traffic stops
+     * behind them the same way it stops behind the player's car. */
+    update(dt, t, playerCar, extraObstacles = []) {
       for (const car of cars) {
         const loop = loops[car.loop];
         let target = car.cruise;
@@ -184,9 +188,13 @@ export function createTraffic(city, seed) {
             target = Math.min(target, Math.max(0, (rel - 2) * 0.7));
           }
         }
-        // The player's car, parked across the lane ahead, is an obstacle.
-        if (playerCar) {
-          const proj = loop.arcOf(playerCar.x, playerCar.z);
+        // The player's car, a police car, or a roadblock parked across the
+        // lane ahead, is an obstacle.
+        const obstacles = [];
+        if (playerCar) obstacles.push(playerCar);
+        for (const o of extraObstacles) obstacles.push(o);
+        for (const obstacle of obstacles) {
+          const proj = loop.arcOf(obstacle.x, obstacle.z);
           if (proj.lateral < 7) {
             const gap = (proj.d - car.d + loop.length) % loop.length;
             if (gap > 0.01 && gap < 25) {
@@ -203,10 +211,12 @@ export function createTraffic(city, seed) {
         car.angle = pos.angle;
       }
     },
-    /** Draw every traffic car and every signal into the dynamic mesh. */
-    drawInto(builder, t, night) {
+    /** Draw every traffic car and every signal into the dynamic mesh.
+     * Cars far from the camera lose their wheels and headlight lenses. */
+    drawInto(builder, t, night, camX = 0, camZ = 0) {
       for (const car of cars) {
-        drawCar(builder, car.x, car.z, car.angle, car.color, night);
+        const d = Math.hypot(car.x - camX, car.z - camZ);
+        drawCar(builder, car.x, car.z, car.angle, car.color, night, d < 400 ? 'full' : 'low');
       }
       for (const signal of signals) {
         drawSignal(builder, signal, signalState(signal, t));

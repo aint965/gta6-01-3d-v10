@@ -14,6 +14,8 @@ export function createHUD(city) {
   const coordsEl = document.getElementById('coords');
   const speedEl = document.getElementById('speed');
   const objectiveEl = document.getElementById('objective');
+  const wantedEl = document.getElementById('wanted');
+  const radioEl = document.getElementById('radio');
   const titleEl = document.getElementById('title');
   const helpEl = document.getElementById('help');
   const mapCanvas = document.getElementById('minimap');
@@ -100,6 +102,44 @@ export function createHUD(city) {
       g.closePath();
       g.fill();
     }
+    // The police: patrol cars blue, roadblocks red, the helicopter a white
+    // ring, the Glasspoint guard gold. Garages: owned green, for sale a
+    // gold outline.
+    if (drive && drive.police) {
+      g.fillStyle = '#4a90d9';
+      for (const c of drive.police.patrol ?? []) {
+        g.fillRect(toMapX(c.x) - 2, toMapZ(c.z) - 2, 4, 4);
+      }
+      g.fillStyle = '#ff5a4a';
+      for (const rb of drive.police.roadblocks ?? []) {
+        g.fillRect(toMapX(rb.x) - 2, toMapZ(rb.z) - 2, 4, 4);
+      }
+      if (drive.police.heli) {
+        g.strokeStyle = '#ffffff';
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.arc(toMapX(drive.police.heli.x), toMapZ(drive.police.heli.z), 4, 0, Math.PI * 2);
+        g.stroke();
+      }
+      if (drive.police.guard) {
+        g.fillStyle = '#f2b13c';
+        g.beginPath();
+        g.arc(toMapX(drive.police.guard.x), toMapZ(drive.police.guard.z), 2.5, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+    if (drive && drive.garages) {
+      for (const gg of drive.garages) {
+        if (gg.owned) {
+          g.fillStyle = '#3ddc6a';
+          g.fillRect(toMapX(gg.x) - 2, toMapZ(gg.z) - 2, 4, 4);
+        } else {
+          g.strokeStyle = '#f2b13c';
+          g.lineWidth = 1.5;
+          g.strokeRect(toMapX(gg.x) - 2, toMapZ(gg.z) - 2, 4, 4);
+        }
+      }
+    }
     // The player: a dot with a heading wedge.
     const px = toMapX(player.x);
     const pz = toMapZ(player.z);
@@ -136,6 +176,27 @@ export function createHUD(city) {
       }
       if (objectiveEl) {
         objectiveEl.textContent = drive ? drive.objective : 'Explore Solmar';
+      }
+      if (wantedEl) {
+        const p = drive ? drive.police : null;
+        if (p && p.stars > 0) {
+          const stars = '\u2605'.repeat(p.stars) + '\u2606'.repeat(5 - p.stars);
+          wantedEl.textContent = `WARRANT ${stars}`
+            + (p.arrestMeter > 0 ? ` \u00b7 ARREST ${Math.round(p.arrestMeter * 100)}%` : '')
+            + (p.grappled ? ' \u00b7 GRABBED \u2014 PRESS F' : '');
+          wantedEl.style.display = 'block';
+        } else {
+          wantedEl.style.display = 'none';
+        }
+      }
+      if (radioEl) {
+        const r = drive ? drive.radio : null;
+        if (r && r.on) {
+          radioEl.textContent = `\u266A SOLMAR COMMON \u2014 ${r.headline}`;
+          radioEl.style.display = 'block';
+        } else {
+          radioEl.style.display = 'none';
+        }
       }
       drawMinimap(player, drive);
     },
