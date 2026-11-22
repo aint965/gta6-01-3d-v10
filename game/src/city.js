@@ -278,6 +278,56 @@ export function buildCity(seed) {
     parkedCars.push({ x, z, angle: vertical ? 0 : Math.PI / 2, color: rng.pick(CAR_COLORS) });
   }
 
+  // --- Shot dressing (deterministic, no RNG): parked cars, palms, benches
+  // and a lifeguard tower where the three screenshot cameras look, so no
+  // frame is a bare ground plane. Every value below is fixed, so the seeded
+  // layout above is untouched. Props stay clear of building footprints:
+  // the road strip is x -10..10, buildings start at x >= 14 or x <= -14
+  // off it, and nothing is built west of x -1440.
+  function plantTreeFixed(x, z, s) {
+    mesh.addBox(x, 1.4, z, 0.7, 2.8, 0.7, { tile: TILE.wood, color: [0.55, 0.4, 0.25], gloss: 0 });
+    mesh.addSphere(x, 3.6 + s * 0.4, z, s, { color: [0.85, 0.95, 0.85], gloss: 0 });
+    treeCount += 1;
+  }
+  function plantPalm(x, z) {
+    // A tall thin trunk and a flat crown, so the beach reads as palms.
+    mesh.addBox(x, 3.5, z, 0.5, 7, 0.5, { tile: TILE.wood, color: [0.6, 0.48, 0.32], gloss: 0 });
+    mesh.addSphere(x, 7.4, z, 2.4, { color: [0.45, 0.75, 0.4], gloss: 0 });
+    treeCount += 1;
+  }
+  function addBench(x, z) {
+    mesh.addBox(x, 0.5, z, 4, 1, 1.2, { tile: TILE.wood, color: [0.6, 0.45, 0.3], gloss: 0.1 });
+  }
+  // Parked cars on the Canal Ward road the day camera looks down.
+  for (const [x, z, ci] of [[6, 10, 0], [-6, -100, 1], [6, -150, 4], [-6, 30, 2]]) {
+    parkedCars.push({ x, z, angle: 0, color: CAR_COLORS[ci] });
+  }
+  // Parked cars on the harbour road the night camera looks down.
+  for (const [x, z, ci] of [[-1262, 40, 3], [-1262, -60, 5], [-1262, 140, 6]]) {
+    parkedCars.push({ x, z, angle: Math.PI / 2, color: CAR_COLORS[ci] });
+  }
+  // Street trees along the day camera's road, just off the tarmac.
+  for (const [x, z, s] of [[12, -10, 2.2], [-12, -80, 1.9], [12, -130, 2.4], [-12, -160, 2.0]]) {
+    plantTreeFixed(x, z, s);
+  }
+  // Palms on the sand for the sunset camera (kept off the sun's line, so
+  // none of them covers the disc) and along the beach in general.
+  for (const [x, z] of [[-1560, 1180], [-1555, 1200], [-1500, 1000], [-1500, 1300], [-1500, 1600]]) {
+    plantPalm(x, z);
+  }
+  // Benches on the sand, facing the sea.
+  for (const [x, z] of [[-1550, 1160], [-1505, 1000], [-1505, 1300], [-1505, 1550]]) addBench(x, z);
+  // Palms and benches along the marina promenade for the night camera.
+  for (const z of [100, 300]) plantPalm(-1432, z);
+  for (const z of [150, 250, 350, 450]) addBench(-1438, z);
+  // A lifeguard tower on the sand, at the sunset frame's right edge.
+  for (const [lx, lz] of [[-1556, 1129], [-1554, 1129], [-1556, 1131], [-1554, 1131]]) {
+    mesh.addBox(lx, 1.5, lz, 0.4, 3, 0.4, { tile: TILE.wood, color: [0.6, 0.45, 0.3], gloss: 0.1 });
+  }
+  mesh.addBox(-1555, 3.4, 1130, 5, 0.6, 4, { tile: TILE.wood, color: [0.65, 0.5, 0.35], gloss: 0.1 });
+  mesh.addBox(-1555, 4.6, 1130, 4, 1.8, 3, { tile: TILE.whiteWall, color: [0.95, 0.9, 0.8], gloss: 0.2 });
+  mesh.addBox(-1555, 5.8, 1130, 5, 0.4, 4, { tile: TILE.awning, color: [1, 1, 1], gloss: 0.1 });
+
   // --- Pedestrian loops: rectangles around a few blocks.
   const loopBlocks = [
     [-480, -360, -240, -120], [-240, -360, 0, -120], [0, -360, 240, -120],
