@@ -25,6 +25,19 @@
   #title .start { margin-top: 42px; font-size: 15px; letter-spacing: 5px; border: 1px solid #ead8b2; padding: 12px 28px; border-radius: 4px; }
   #title .controls { margin-top: 26px; font-size: 13px; color: rgba(234, 216, 178, 0.85); line-height: 1.9; }
   #title .stage { margin-top: 22px; font-size: 11px; letter-spacing: 2px; color: rgba(159, 196, 204, 0.9); }
+  #banner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); max-width: 60%; display: none; background: rgba(215, 127, 105, 0.92); color: #142d38; font: 700 14px system-ui, -apple-system, "Segoe UI", sans-serif; padding: 10px 18px; border-radius: 6px; z-index: 15; text-align: center; }
+  #dossier { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(560px, 90vw); max-height: 82vh; overflow-y: auto; display: none; background: rgba(20, 45, 56, 0.96); border: 1px solid rgba(234, 216, 178, 0.4); border-radius: 8px; padding: 18px 22px; color: #ead8b2; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; z-index: 25; }
+  #dossier h2 { margin: 0 0 6px; font-size: 18px; letter-spacing: 3px; color: #d77f69; }
+  #dossier h3 { margin: 14px 0 6px; font-size: 13px; letter-spacing: 2px; color: #9fc4cc; }
+  #dossier .dossier-meta { font-size: 12px; color: rgba(234, 216, 178, 0.8); margin-bottom: 10px; }
+  #dossier .mission-row { border: 1px solid rgba(234, 216, 178, 0.25); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+  #dossier .mission-row[data-status="locked"] { opacity: 0.45; cursor: default; }
+  #dossier .mission-head { display: flex; justify-content: space-between; font-weight: 700; font-size: 14px; }
+  #dossier .mission-status { color: #f2b13c; letter-spacing: 1px; font-size: 12px; }
+  #dossier .mission-brief { font-size: 12px; line-height: 1.5; margin-top: 4px; color: rgba(234, 216, 178, 0.85); }
+  #dossier .mission-reward { font-size: 12px; color: #f2b13c; margin-top: 4px; }
+  #dossier .evidence-row { font-size: 12px; line-height: 1.5; margin-bottom: 4px; }
+  #dossier .dossier-hint { font-size: 11px; color: rgba(159, 196, 204, 0.9); margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -38,13 +51,15 @@
   <div id="objective">Explore Solmar — press E near a car to drive</div>
 </div>
 <canvas id="minimap" width="200" height="184" aria-label="Minimap of Solmar"></canvas>
-<div id="help" class="panel">WASD walk · Mouse look · Shift run · E enter / exit car · W/S drive · A/D steer · 1 midday · 2 sunset · 3 night</div>
+<div id="banner" aria-live="polite"></div>
+<div id="dossier" aria-label="Mission dossier"></div>
+<div id="help" class="panel">WASD walk · Mouse look · Shift run · E enter / exit car · W/S drive · A/D steer · M missions · Q collect / deliver · X drop cargo · 1 midday · 2 sunset · 3 night</div>
 <div id="title">
   <h1>PALKON AUTO</h1>
   <div class="sub">AN ORIGINAL OPEN-WORLD CRIME GAME · SOLMAR</div>
   <div class="start">CLICK TO START</div>
-  <div class="controls">WASD — walk &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run<br>E — enter / exit a car &nbsp;·&nbsp; W/S — drive &nbsp;·&nbsp; A/D — steer<br>1 — scorching midday &nbsp;·&nbsp; 2 — sunset &nbsp;·&nbsp; 3 — night</div>
-  <div class="stage">STAGE B — VEHICLES + TRAFFIC</div>
+  <div class="controls">WASD — walk &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run<br>E — enter / exit a car &nbsp;·&nbsp; W/S — drive &nbsp;·&nbsp; A/D — steer<br>M — mission dossier &nbsp;·&nbsp; Q — collect / deliver &nbsp;·&nbsp; X — drop cargo<br>1 — scorching midday &nbsp;·&nbsp; 2 — sunset &nbsp;·&nbsp; 3 — night</div>
+  <div class="stage">STAGE C — MISSIONS 1–4</div>
 </div>
 <p id="status" role="status" aria-live="polite"></p>
 <div id="errors" aria-hidden="true"></div>

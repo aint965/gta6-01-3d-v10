@@ -81,6 +81,25 @@ export function createHUD(city) {
         g.fillRect(toMapX(c.x) - 1, toMapZ(c.z) - 1, 2, 2);
       }
     }
+    // The active mission: its area as a coral outline, the current
+    // objective as a gold diamond — drawn under the traffic and the player.
+    if (drive && drive.mission) {
+      const a = drive.mission.area;
+      g.strokeStyle = '#d77f69';
+      g.lineWidth = 2;
+      g.strokeRect(toMapX(a.x0), toMapZ(a.z0), (a.x1 - a.x0) * scaleX, (a.z1 - a.z0) * scaleZ);
+      const t = drive.mission.target;
+      const tx = toMapX(t.x);
+      const tz = toMapZ(t.z);
+      g.fillStyle = '#f2b13c';
+      g.beginPath();
+      g.moveTo(tx, tz - 5);
+      g.lineTo(tx + 5, tz);
+      g.lineTo(tx, tz + 5);
+      g.lineTo(tx - 5, tz);
+      g.closePath();
+      g.fill();
+    }
     // The player: a dot with a heading wedge.
     const px = toMapX(player.x);
     const pz = toMapZ(player.z);

@@ -58,6 +58,30 @@ export const SHOTS = {
     signalRed: 0,
     advance: 38,
   },
+  // Stage C: verification shots only — never added to screenshots/ (the
+  // dossier caps the game at four). Mission 2 in progress: Mara stands on
+  // the harbour road, the gold beacon marking the dock ledger 40 m ahead,
+  // the basin and the docks beyond it.
+  missionHarbour: {
+    preset: 'day',
+    camera: { pos: [-1255, 8, 165], target: [-1255, 3, 80] },
+    mission: 2,
+    mara: [-1255, 140],
+    maraYaw: 0,
+    advance: 8,
+  },
+  // Stage C: verification shot only. Mission 3 in progress: Mara has
+  // collected Oren's witness statement and Oren walks behind her on the
+  // Canal Ward road, heading for the civic park archive.
+  missionEscort: {
+    preset: 'day',
+    camera: { pos: [8, 6, 420], target: [0, 2, 300] },
+    mission: 3,
+    mara: [0, 380],
+    maraYaw: 0,
+    collect: true,
+    advance: 8,
+  },
 };
 
 /** Camera yaw/pitch (the game's convention) for a camera looking at a target. */

@@ -261,3 +261,155 @@ night; the minimap and driving HUD are live.
 4. Sky dome vanished after culling was enabled: its front faces point
    inward, so culling is off for the sky pass (this also restored the sun
    disc, which the uniform clear colour had been hiding).
+
+# Stage C build report — missions 1–4
+
+## What was built
+
+- `game/src/missions.js` (new): the mission state machine for missions
+  1–4. Ordered unlocks (mission N opens only after N−1 completes);
+  a saved evidence log (`palkon-auto-save-v1`, cash / completed /
+  evidence / unlocked, persisted to localStorage); cash rewards paid on
+  completion. `createMissions(world)` with `start(id, {force})`,
+  `interact()`, `dropCargo()`, `vehicleHit(car, speedBefore)`,
+  `update(dt)`, `getObjectiveText()`, `getMinimapInfo()`,
+  `getDossier()`, `drawInto(builder, time)`, and a `debug` handle
+  (`resetSave`, `setTimeLeft`, `setHealth`, `damagePlayer`,
+  `damageVehicle`).
+- The four missions: 1. "A Receipt for Sunshine" — collect the receipt
+  naming broker Silas Rook at (0,−300), deliver it to (0,600), $150,
+  300 s. 2. "Salt Ledger" — recover the dock ledger at (−1260,100)
+  from the harbour, deliver to (−1000,−1080), $250, 240 s.
+  3. "After the Shutters" — collect Oren's witness statement at
+  (0,780), escort Oren (he follows Mara) to (−1000,−1080), $350,
+  480 s. 4. "Glass Debt" — drive the courier van to the Glasspoint
+  office (1200,−1080), collect the payment chain, drive it back to the
+  South Market drop (240,600), $500, 420 s. Total $1,500.
+- Timed operation HUDs (mission timer + distance-to-objective in the
+  top-left panel), minimap boundary outlines (the mission area as a
+  coral outline, the current objective as a gold diamond, drawn in
+  `hud.js` before the traffic/player dots), objective beacons in the
+  world (gold diamond + vertical beam, drawn by `drawInto`), and a
+  compass arrow pointing at the current objective.
+- Interaction keys: Q collects / delivers / activates, X drops carried
+  cargo, E keeps the existing vehicle controls, M toggles the mission
+  dossier overlay, digits 1–4 start a mission while the dossier is
+  open. The dossier overlay (`#dossier` in `index.html`) lists all four
+  missions with status, cash, and the evidence log.
+- Failure and retry: zero health recovers Mara to the civic park
+  (−1000,−1010) with a $100 cash penalty and fails the active mission;
+  a timer running out, leaving the mission boundary (5 s grace, and the
+  clock only starts once Mara has entered the area), destroying a
+  required vehicle (courier van, 25 damage per hit above 12 m/s,
+  1 s throttle), losing required evidence (cargo dropped and walked
+  30 m away), or losing a required ally (Oren more than 80 m away for
+  15 s) also fails the active mission. A failed mission's van is towed
+  back to its spot (480,300) facing north with speed 0. Retry resets
+  the selected mission.
+- `game/src/people.js`: exported `drawPersonAt(b, x, z, angle, shirt,
+  skin, phase)` so the mission module can draw Oren (coral shirt, gold
+  diamond above him) during the escort.
+- `game/src/main.js`: courier van created and pushed to drivableCars
+  (faces north, so its first leg needs no U-turn); banner + dossier
+  overlay wiring; `missions.update(dt)` in `simStep`;
+  `missions.vehicleHit` in `stepDrive`; `missions.drawInto` in
+  `renderFrame`; objective text and minimap info from the mission
+  module; the `?test=missions` scripted play-through hook (14 phases,
+  see below); two verification-only shots in `shots.js`
+  (`missionHarbour`, `missionEscort` — never into `screenshots/`,
+  the dossier caps at 4 and 4 already exist).
+
+## Verification (all in a real headless browser, SwiftShader WebGL)
+
+- `?test=missions`: **MISSIONS-TEST PASS, 0 console errors, 0 page
+  errors** (107,764 sim steps). The scripted play-through covers all
+  four missions start to completion plus every failure path:
+  - Mission 1 completes: collect the receipt (Q), deliver it (Q),
+    cash $150, mission 2 unlocked, receipt in the evidence log.
+  - Mission 2 completes: collect the dock ledger (Q), deliver it (Q),
+    cash $400, mission 3 unlocked.
+  - Mission 3 completes: collect Oren's statement (Q), Oren follows
+    Mara through the escort, cash $750, mission 4 unlocked.
+  - Mission 4 completes: enter the courier van, drive to the
+    Glasspoint office, collect the payment chain (Q), drive back,
+    deliver it (Q), cash **$1,150** (after the $100 zero-health
+    penalty earlier in the run), all four missions complete, all four
+    evidence pieces logged, save + dossier verified.
+  - Failure paths, each retried successfully afterwards: mission 1
+    fails by leaving the area; mission 2 fails by timer and by
+    dropping the ledger and walking away; mission 3 fails by losing
+    Oren; mission 4 fails by leaving the area, by destroying the van,
+    and by zero health (Mara recovers at the civic park, health
+    restored to 100, cash $650 after the $100 penalty).
+  - Traffic car hits Mara on foot: health 100 → 66 (−34).
+  - Van takes a real hit at the city edge: one hit, integrity 75.
+  - Save check: localStorage `palkon-auto-save-v1` holds cash 1150,
+    4 completed missions, 4 evidence entries; `getDossier()` shows
+    cash $1150 and all four missions done.
+  - Note: the test autopilot cruises the van at 10 m/s (a human
+    drives 20+ m/s), so phase 12 relaxes the mission clock with
+    `debug.setTimeLeft(1500)` for that run only — the game keeps its
+    420 s clock, and a human covers the 5.2 km route in ~290 s. The
+    clock itself is verified by the timer-fail test (phase 3).
+- Two mission verification shots captured to /tmp and viewed:
+  `missionHarbour` (Pearl Marina, "3:52 · 40m · Collect the dock
+  ledger", minimap shows the coral mission boundary and the gold
+  objective diamond) and `missionEscort` (South Market, "7:53 ·
+  400m · Collect Oren's witness statement"). Both READY, 0 errors.
+  The mission HUD (timer, distance, objective text) and the minimap
+  boundary render correctly; Mara herself is small in these frames
+  (the camera sits behind her) — Stage F stages the final four.
+- Packaging: `MAKEFUN_OUTPUT_DIR=/tmp/palkon-out node main.ts`
+  (exit 0) produced `game/` (index.html + src/), `screenshots/`
+  (still exactly the 4 JPEGs) and `dossier.json` (schema
+  `makefun/dossier/v1`).
+- All modules pass `node --check`.
+
+## Bugs found and fixed during verification
+
+1. Canal sealed shut (Stage A): the old code pushed one pair of canal
+   collider segments per bridge, and the segments from different
+   bridges overlapped every gap. The segments are now cut from the
+   whole canal minus the union of the bridge gaps:
+   [−600,−492], [−468,−12], [12,468], [492,600]. The missions test
+   proved it (a north walk from (0,320) hit the canal at (0,−179.5)
+   before the fix, reaches (0,−300) after). This also unblocks
+   drivable cars, which mission 4's van needs to cross the canal.
+2. Mission 2 collect unreachable: the walk target (−1255,100) could
+   stop 9 m from the ledger at (−1260,100), outside the 6 m collect
+   radius, and the player cannot stand at x=−1260 (harbour basin
+   collider). The walk target is now (−1259,100).
+3. Mission 3 escort completed too early: the test checked cash
+   immediately after the walk while Oren was still catching up. The
+   test now waits up to 600 steps for Oren to arrive within 30 m.
+   (Game behaviour unchanged — the escort completes when Oren is
+   within 30 m of the target.)
+4. Mission 4 boundary fail never fired: the teleport happened before
+   any update ran, so `entered` was never set. `entered` is now set
+   at `start()` from the player's current position.
+5. Courier van U-turn: the van started facing south (angle 0) and its
+   first target was north, so it U-turned and swung 16 m sideways
+   off the road into a building. The van now faces north at creation
+   and in the failMission tow-back.
+6. Van autopilot: the old code braked near a waypoint but then
+   accelerated back toward cruise, so the van entered turns at up to
+   cruise speed and its radius swung it off the road; and the gain
+   was too low to correct the van's drift over a long leg. The
+   autopilot now holds 2 m/s within 40 m of a waypoint (brake if
+   faster, throttle if slower) and uses gain 3. Cruise 10 keeps the
+   van below the 12 m/s damage threshold, so a brush with traffic
+   costs nothing.
+7. Glasspoint towers blocking roads (Stage A): the tower placement
+   checked only other colliders, not roads, and seven of the twelve
+   towers landed on top of road strips — the x=720 road was blocked
+   in two places, x=960 in two, x=1440 in two, and z=−1320 in one,
+   so driving through Glasspoint was impossible. Tower placement now
+   also skips any tower whose footprint overlaps a road strip
+   (ROAD_XS / ROAD_ZS ± 10). The rng draws still run, so the towers
+   that clear a road keep their seeded positions; no road in
+   Glasspoint is blocked anymore (verified: zero colliders overlap
+   any road strip there).
+8. Test expectation, not a game bug: after mission 4 the test
+   expected `unlocked === 5`, but the game caps `unlocked` at 4
+   (`Math.min(4, def.id + 1)`) because Stage C defines only four
+   missions. The check now expects 4.

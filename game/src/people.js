@@ -49,28 +49,33 @@ export function rotBox(b, cx, cy, cz, w, h, d, angle, opts = {}) {
   }
 }
 
-function drawPerson(b, p) {
-  const bob = Math.sin(p.phase) * 0.06;
-  const swing = Math.sin(p.phase) * 0.14;
-  const a = p.angle;
+/** Draw one person at a position, for Oren and any other named character:
+ * legs swing, torso and head, in the given shirt and skin colours. */
+export function drawPersonAt(b, x, z, a, shirt, skin, phase) {
+  const bob = Math.sin(phase) * 0.06;
+  const swing = Math.sin(phase) * 0.14;
   // Legs swing along the walking direction; the pair sits across it.
   const fx = Math.sin(a);
   const fz = Math.cos(a);
   const px = Math.cos(a);
   const pz = -Math.sin(a);
-  rotBox(b, p.x + px * 0.13 + fx * swing, 0.38 + bob, p.z + pz * 0.13 + fz * swing, 0.2, 0.76, 0.2, a, {
+  rotBox(b, x + px * 0.13 + fx * swing, 0.38 + bob, z + pz * 0.13 + fz * swing, 0.2, 0.76, 0.2, a, {
     tile: TILE.darkWall, color: [0.22, 0.24, 0.3], gloss: 0,
   });
-  rotBox(b, p.x - px * 0.13 - fx * swing, 0.38 + bob, p.z - pz * 0.13 - fz * swing, 0.2, 0.76, 0.2, a, {
+  rotBox(b, x - px * 0.13 - fx * swing, 0.38 + bob, z - pz * 0.13 - fz * swing, 0.2, 0.76, 0.2, a, {
     tile: TILE.darkWall, color: [0.22, 0.24, 0.3], gloss: 0,
   });
   // Torso and head.
-  rotBox(b, p.x, 1.12 + bob, p.z, 0.56, 0.72, 0.34, a, {
-    tile: TILE.limestonePlain, color: p.shirt, gloss: 0.05,
+  rotBox(b, x, 1.12 + bob, z, 0.56, 0.72, 0.34, a, {
+    tile: TILE.limestonePlain, color: shirt, gloss: 0.05,
   });
-  rotBox(b, p.x, 1.66 + bob, p.z, 0.3, 0.3, 0.3, a, {
-    tile: TILE.limestonePlain, color: p.skin, gloss: 0.05,
+  rotBox(b, x, 1.66 + bob, z, 0.3, 0.3, 0.3, a, {
+    tile: TILE.limestonePlain, color: skin, gloss: 0.05,
   });
+}
+
+function drawPerson(b, p) {
+  drawPersonAt(b, p.x, p.z, p.angle, p.shirt, p.skin, p.phase);
 }
 
 export function drawCar(b, x, z, angle, color, headlights = false) {

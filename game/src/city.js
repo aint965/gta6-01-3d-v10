@@ -124,11 +124,17 @@ export function buildCity(seed) {
       tile: TILE.concrete, tileTop: TILE.road, color: [0.9, 0.88, 0.82], gloss: 0.1,
     });
   }
-  // The canal blocks walking except at the bridges.
-  for (const x of BRIDGE_XS) {
-    colliders.push({ x0: CANAL.x0, z0: CANAL.z0, x1: x - 12, z1: CANAL.z1 });
-    colliders.push({ x0: x + 12, z0: CANAL.z0, x1: CANAL.x1, z1: CANAL.z1 });
+  // The canal blocks walking except at the bridges. The segments are cut
+  // from the whole canal minus the union of the bridge gaps — pushing one
+  // pair of segments per bridge (as before) overlaps the other bridges'
+  // gaps and seals the canal shut, so no one could ever cross it.
+  const bridgeGaps = BRIDGE_XS.map((x) => [x - 12, x + 12]).sort((a, b) => a[0] - b[0]);
+  let cursor = CANAL.x0;
+  for (const [g0, g1] of bridgeGaps) {
+    if (g0 > cursor) colliders.push({ x0: cursor, z0: CANAL.z0, x1: g0, z1: CANAL.z1 });
+    cursor = Math.max(cursor, g1);
   }
+  if (cursor < CANAL.x1) colliders.push({ x0: cursor, z0: CANAL.z0, x1: CANAL.x1, z1: CANAL.z1 });
   colliders.push({ x0: HARBOR.x0, z0: HARBOR.z0, x1: HARBOR.x1, z1: HARBOR.z1 });
 
   // --- Buildings, one block at a time.
@@ -182,6 +188,12 @@ export function buildCity(seed) {
   }
 
   // --- Glasspoint towers: a dozen tall glass slabs on their own plots.
+  // A tower's footprint must clear every road strip — the placement used
+  // to check only other colliders, and seven of the twelve towers landed
+  // on top of roads (their footprints reach across the 20 m road), so
+  // driving through Glasspoint was blocked in both directions. A tower
+  // that would overlap a road is skipped; the rng draws above still run,
+  // so the towers that do clear a road keep their seeded positions.
   for (let i = 0; i < 12; i += 1) {
     const px = rng.range(700, 1820);
     const pz = rng.range(-1620, -700);
@@ -190,6 +202,8 @@ export function buildCity(seed) {
     const h = rng.range(58, 140);
     const foot = { x0: px - w / 2 - 4, z0: pz - d / 2 - 4, x1: px + w / 2 + 4, z1: pz + d / 2 + 4 };
     if (colliders.some((col) => rectsOverlap(foot, col))) continue;
+    if (ROAD_XS.some((rx) => foot.x0 < rx + 10 && foot.x1 > rx - 10)) continue;
+    if (ROAD_ZS.some((rz) => foot.z0 < rz + 10 && foot.z1 > rz - 10)) continue;
     placeBuilding(px, pz, w, d, h, [TILE.glassBlue, TILE.glassTeal], rng);
     // A lit crown on the tallest towers.
     mesh.addBox(px, h + 2, pz, w * 0.4, 4, d * 0.4, {
